@@ -1,0 +1,30 @@
+import 'package:flutter/foundation.dart';
+import '../models/user_profile.dart';
+
+abstract class AuthRepository extends ChangeNotifier {
+  bool get authReady;
+  String? get uid;
+  String? get email;
+  Stream<UserProfile?> watchProfile();
+  Future<void> login(String email, String password);
+  Future<void> register({
+    required String fullName,
+    required String email,
+    required String phoneNumber,
+    required String password,
+    required AccountRole role,
+  });
+  Future<void> completeProfile({
+    required String fullName,
+    required String phoneNumber,
+    required AccountRole role,
+  });
+  Future<void> sendPasswordReset(String email);
+  Future<void> setupStall(String name, String category, int minutes);
+  Future<void> logout();
+}
+
+class AccountException implements Exception {
+  const AccountException(this.message);
+  final String message;
+}
