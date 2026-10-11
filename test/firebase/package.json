@@ -1,0 +1,15 @@
+{
+  "dependencies": {
+    "@firebase/rules-unit-testing": "^6.0.0",
+    "firebase": "^13.0.0",
+    "firebase-tools": "^15.33.0",
+    "firebase-sdk-tested": "npm:firebase@12.19.0",
+    "esbuild": "^0.27.0"
+  },
+  "name": "smart-canteen-firebase-tests",
+  "private": true,
+  "scripts": {
+    "test": "firebase emulators:exec --project demo-smart-canteen --only auth,firestore --config ../../firebase.json \"node --test stage_one.test.mjs\"",
+    "test:dart": "firebase emulators:exec --project demo-smart-canteen --only auth,firestore --config ../../firebase.json \"node run_dart_tests.mjs\""
+  }
+}

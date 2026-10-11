@@ -1,0 +1,55 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function owns(uid) { return signedIn() && request.auth.uid == uid; }
+    function validProfile(data, uid) {
+      return data.keys().hasAll(['uid', 'fullName', 'email', 'phoneNumber', 'role', 'createdAt', 'stallSetupComplete', 'stallId'])
+        && data.keys().hasOnly(['uid', 'fullName', 'email', 'phoneNumber', 'role', 'createdAt', 'stallSetupComplete', 'stallId'])
+        && data.uid == uid
+        && data.fullName is string && data.fullName.size() > 0 && data.fullName.size() <= 100
+        && data.email is string && data.email == request.auth.token.email
+        && data.phoneNumber is string && data.phoneNumber.size() >= 8 && data.phoneNumber.size() <= 30
+        && data.role in ['student', 'vendor'] && data.createdAt is timestamp
+        && data.stallSetupComplete is bool
+        && ((!data.stallSetupComplete && data.stallId == null)
+          || (data.role == 'vendor' && data.stallSetupComplete && data.stallId == uid));
+    }
+    function validStall(data, uid) {
+      return data.keys().hasAll(['ownerUid', 'name', 'category', 'preparationMinutes', 'status', 'createdAt'])
+        && data.keys().hasOnly(['ownerUid', 'name', 'category', 'preparationMinutes', 'status', 'createdAt'])
+        && data.ownerUid == uid
+        && data.name is string && data.name.size() > 0 && data.name.size() <= 100
+        && data.category is string && data.category.size() > 0 && data.category.size() <= 100
+        && data.preparationMinutes is int && data.preparationMinutes >= 1 && data.preparationMinutes <= 180
+        && data.status == 'closed' && data.createdAt == request.time;
+    }
+    match /users/{uid} {
+      allow get: if owns(uid);
+      allow list, delete: if false;
+      allow create: if owns(uid) && validProfile(request.resource.data, uid)
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.stallSetupComplete == false && request.resource.data.stallId == null;
+      allow update: if owns(uid) && validProfile(request.resource.data, uid)
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['fullName', 'phoneNumber', 'stallId', 'stallSetupComplete'])
+        && ((request.resource.data.stallId == resource.data.stallId
+              && request.resource.data.stallSetupComplete == resource.data.stallSetupComplete)
+          || (resource.data.role == 'vendor' && !resource.data.stallSetupComplete
+              && request.resource.data.stallSetupComplete && request.resource.data.stallId == uid
+              && !exists(/databases/$(database)/documents/stalls/$(uid))
+              && validStall(getAfter(/databases/$(database)/documents/stalls/$(uid)).data, uid)));
+    }
+    match /stalls/{stallId} {
+      // Owners must be able to read the absent document in a transaction.
+      allow get: if owns(stallId);
+      allow list, update, delete: if false;
+      allow create: if owns(stallId) && validStall(request.resource.data, stallId)
+        && get(/databases/$(database)/documents/users/$(stallId)).data.role == 'vendor'
+        && get(/databases/$(database)/documents/users/$(stallId)).data.stallSetupComplete == false
+        && getAfter(/databases/$(database)/documents/users/$(stallId)).data.stallSetupComplete == true
+        && getAfter(/databases/$(database)/documents/users/$(stallId)).data.stallId == stallId;
+    }
+    match /{document=**} { allow read, write: if false; }
+  }
+}
