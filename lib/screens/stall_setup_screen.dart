@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../constants/stall_categories.dart';
 import '../services/auth_repository.dart';
 import '../services/error_messages.dart';
 import '../services/validators.dart';
@@ -14,8 +15,8 @@ class StallSetupScreen extends StatefulWidget {
 class _StallSetupScreenState extends State<StallSetupScreen> {
   final _form = GlobalKey<FormState>();
   final _name = TextEditingController(),
-      _category = TextEditingController(),
       _minutes = TextEditingController(text: '15');
+  String? _selectedCategory;
   bool _busy = false;
   String? _error;
   Future<void> _submit() async {
@@ -28,7 +29,7 @@ class _StallSetupScreenState extends State<StallSetupScreen> {
     try {
       await widget.repository.setupStall(
         _name.text,
-        _category.text,
+        _selectedCategory!,
         int.parse(_minutes.text.trim()),
       );
     } catch (e) {
@@ -53,7 +54,6 @@ class _StallSetupScreenState extends State<StallSetupScreen> {
   @override
   void dispose() {
     _name.dispose();
-    _category.dispose();
     _minutes.dispose();
     super.dispose();
   }
@@ -78,11 +78,42 @@ class _StallSetupScreenState extends State<StallSetupScreen> {
             validator: Validators.name,
             enabled: !_busy,
           ),
-          AppField(
-            label: 'Food Category',
-            controller: _category,
-            validator: Validators.name,
-            enabled: !_busy,
+          Padding(
+            padding: const EdgeInsets.only(bottom: 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Stall Category',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                ),
+                const SizedBox(height: 8),
+                Semantics(
+                  label: 'Stall Category',
+                  child: DropdownButtonFormField<String>(
+                    initialValue: _selectedCategory,
+                    hint: const Text('Select stall category'),
+                    isExpanded: true,
+                    items: stallCategories
+                        .map(
+                          (category) => DropdownMenuItem(
+                            value: category,
+                            child: Text(category),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: _busy
+                        ? null
+                        : (value) => setState(() {
+                            _selectedCategory = value;
+                          }),
+                    validator: (value) => stallCategories.contains(value)
+                        ? null
+                        : 'Please select a stall category.',
+                  ),
+                ),
+              ],
+            ),
           ),
           AppField(
             label: 'Initial Preparation Time (minutes)',
