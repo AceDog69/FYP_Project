@@ -26,7 +26,7 @@ const dbFor = (uid) => env.authenticatedContext(uid, {email: `${uid}@example.com
 const profile = (uid, role = 'student') => ({ uid, fullName: 'Alex Lee',
   email: `${uid}@example.com`, phoneNumber: '0123456789', role,
   createdAt: serverTimestamp(), stallSetupComplete: false, stallId: null });
-const stall = (uid) => ({ ownerUid: uid, name: 'Campus Kitchen', category: 'Rice',
+const stall = (uid) => ({ ownerUid: uid, name: 'Campus Kitchen', category: 'Malay',
   preparationMinutes: 15, status: 'closed', createdAt: serverTimestamp() });
 async function create(db, uid, role = 'student') {
   await assertSucceeds(setDoc(doc(db, 'users', uid), profile(uid, role)));
@@ -104,6 +104,46 @@ test('completed stalls cannot be reassigned, reset, duplicated or edited', async
   await assertFails(setDoc(doc(db,'stalls','another-stall'),stall('vendor')));
   await assertFails(updateDoc(doc(db,'stalls','vendor'),{ownerUid:'other'}));
   await assertFails(deleteDoc(doc(db,'stalls','vendor')));
+});
+
+test('all seven approved stall categories are accepted as exact String values', async () => {
+  for (const [index, category] of ['Malay','Western','Chinese','Japanese','Korean','Beverage','Dessert'].entries()) {
+    const uid = `vendor-${index}`, db = dbFor(uid);
+    await create(db,uid,'vendor');
+    await assertSucceeds(setup(db,uid,{category}));
+    const saved = (await getDoc(doc(db,'stalls',uid))).data();
+    assert.equal(saved.category,category);
+    assert.equal(saved.name,'Campus Kitchen');
+    assert.equal(saved.ownerUid,uid);
+    assert.equal(saved.preparationMinutes,15);
+    assert.equal(saved.status,'closed');
+    const user = (await getDoc(doc(db,'users',uid))).data();
+    assert.equal(user.stallSetupComplete,true);
+    assert.equal(user.stallId,uid);
+  }
+});
+test('unapproved categories are denied and leave setup incomplete', async () => {
+  const db = dbFor('vendor'); await create(db,'vendor','vendor');
+  for (const category of ['Other','All','Rice','Malay Food','malay','Malay ','',null,42,['Malay']]) {
+    await assertFails(setup(db,'vendor',{category}));
+    assert.equal((await getDoc(doc(db,'stalls','vendor'))).exists(),false);
+    assert.equal((await getDoc(doc(db,'users','vendor'))).data().stallSetupComplete,false);
+  }
+});
+test('legacy completed stalls stay readable and unchanged', async () => {
+  for (const [index, category] of ['Western','Malay Food'].entries()) {
+    const uid = `legacy-${index}`, db = dbFor(uid);
+    await env.withSecurityRulesDisabled(async context => {
+      const admin = context.firestore();
+      await setDoc(doc(admin,'users',uid),{...profile(uid,'vendor'),stallSetupComplete:true,stallId:uid});
+      await setDoc(doc(admin,'stalls',uid),{...stall(uid),category});
+    });
+    const ref = doc(db,'stalls',uid), before = (await getDoc(ref)).data();
+    await assertSucceeds(updateDoc(doc(db,'users',uid),{fullName:'Existing Vendor'}));
+    await assertFails(updateDoc(ref,{category:'Malay'}));
+    assert.deepEqual((await getDoc(ref)).data(),before);
+    assert.equal((await getDoc(doc(db,'users',uid))).data().stallSetupComplete,true);
+  }
 });
 
 test('real Auth emulator accounts: registration, login, profiles, stall transaction, reset, logout', async () => {

@@ -122,6 +122,13 @@ Future<void> tap(WidgetTester tester, String label) async {
   await tester.pumpAndSettle();
 }
 
+Future<void> openStallCategory(WidgetTester tester) async {
+  final dropdown = find.byType(DropdownButtonFormField<String>);
+  await tester.ensureVisible(dropdown);
+  await tester.tap(dropdown);
+  await tester.pumpAndSettle();
+}
+
 Future<void> launch(WidgetTester tester, TestRepository repo) async {
   tester.view.reset();
   await tester.binding.setSurfaceSize(const Size(390, 844));
@@ -296,7 +303,8 @@ void main() {
       expect(find.text('Set Up Your Stall'), findsOneWidget);
       expect(find.byType(BottomNavigationBar), findsNothing);
       await fill(tester, 'Stall Name', 'Campus Kitchen');
-      await fill(tester, 'Food Category', 'Rice');
+      await openStallCategory(tester);
+      await tap(tester, 'Malay');
       await tap(tester, 'Complete Stall Setup');
       expect(find.text('Welcome, Vendor'), findsOneWidget);
       expect(
@@ -330,7 +338,8 @@ void main() {
     addTearDown(repo.dispose);
     await launch(tester, repo);
     await fill(tester, 'Stall Name', 'Campus Kitchen');
-    await fill(tester, 'Food Category', 'Rice');
+    await openStallCategory(tester);
+    await tap(tester, 'Malay');
     await tap(tester, 'Complete Stall Setup');
     expect(find.text('Could not save stall.'), findsOneWidget);
     expect(find.text('Welcome, Vendor'), findsNothing);

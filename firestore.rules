@@ -20,7 +20,7 @@ service cloud.firestore {
         && data.keys().hasOnly(['ownerUid', 'name', 'category', 'preparationMinutes', 'status', 'createdAt'])
         && data.ownerUid == uid
         && data.name is string && data.name.size() > 0 && data.name.size() <= 100
-        && data.category is string && data.category.size() > 0 && data.category.size() <= 100
+        && data.category is string && data.category in ['Malay', 'Western', 'Chinese', 'Japanese', 'Korean', 'Beverage', 'Dessert']
         && data.preparationMinutes is int && data.preparationMinutes >= 1 && data.preparationMinutes <= 180
         && data.status == 'closed' && data.createdAt == request.time;
     }

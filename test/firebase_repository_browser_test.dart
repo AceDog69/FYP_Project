@@ -105,10 +105,13 @@ void main() {
         false,
       );
       final uid = repository.uid!;
-      await repository.setupStall('Campus Kitchen', 'Rice', 15);
+      await repository.setupStall('Campus Kitchen', 'Malay', 15);
       await repository.setupStall('Should Not Replace', 'Other', 30);
       final stall = await db.collection('stalls').doc(uid).get();
       expect(stall.data()!['name'], 'Campus Kitchen');
+      expect(stall.data()!['category'], 'Malay');
+      expect(stall.data()!['preparationMinutes'], 15);
+      expect(stall.data()!['ownerUid'], uid);
       expect(stall.data()!['status'], 'closed');
       repository.dispose();
       repository = FirebaseAuthRepository(auth, db);
