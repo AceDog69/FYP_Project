@@ -166,7 +166,10 @@ Future<void> fill(WidgetTester tester, String label, String value) async {
 
 Future<void> tap(WidgetTester tester, String label) async {
   final target = find.text(label).last;
+
   await tester.ensureVisible(target);
+  await tester.pumpAndSettle();
+
   await tester.tap(target);
   await tester.pumpAndSettle();
 }

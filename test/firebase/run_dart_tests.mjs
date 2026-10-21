@@ -25,8 +25,24 @@ const server = createServer(async (request,response) => {
 });
 await new Promise(resolve => server.listen(9190,'127.0.0.1',resolve));
 try {
-  const child = spawn('flutter',['test','--platform','chrome','test/firebase_repository_browser_test.dart'],
-    {cwd:resolve(directory,'../..'),stdio:'inherit',env:process.env});
+  const flutterArgs = [
+  'test',
+  '--platform',
+  'chrome',
+  'test/firebase_repository_browser_test.dart',
+];
+
+const child = process.platform === 'win32'
+  ? spawn('cmd.exe', ['/d', '/c', 'flutter.bat', ...flutterArgs], {
+      cwd: resolve(directory, '../..'),
+      stdio: 'inherit',
+      env: process.env,
+    })
+  : spawn('flutter', flutterArgs, {
+      cwd: resolve(directory, '../..'),
+      stdio: 'inherit',
+      env: process.env,
+    });
   const code = await new Promise((resolve,reject) => {
     child.on('error',reject);child.on('exit',resolve);
   });
