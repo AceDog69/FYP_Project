@@ -9,7 +9,7 @@ Updated 21 October 2026 (Asia/Singapore). Supervisor meeting: 28 October 2026.
 | Approved Stage 1 baseline | `d7741277fe0918c1463449b0d0f5bb178ca01fef` |
 | Stage 2A-01 Dashboard source | `fb9760731474fe80257c8d753b6e6f90d03330bb` |
 | Latest Stage 2A-01 fixes, verified through GitHub before editing | `01b08d15ab2bc48d87caa497c0c54fbdc35b80d8` |
-| Stage 2A-02 implementation | Source commit will be recorded after the implementation snapshot is committed. |
+| Stage 2A-02 implementation; runtime/security acceptance pending | `d76c2c95f7142e87191e8ed6cbf516b839d4b1b4` |
 
 Stage 2A-01 was verified by the user on a Windows Pixel 6 Android emulator:
 analysis passed, 23 combined Flutter tests passed, and Dashboard navigation,
@@ -21,6 +21,15 @@ Stage 2A-01 commit and its tree were imported through the connected GitHub
 integration because shell Git transport could not reach its proxy. The verified
 Material widget and test-visibility fixes are retained. No missing old Stage 2A
 commit was reconstructed and no development was based on Stage 1 alone.
+
+GitHub backup of the implementation snapshot was confirmed at
+`d76c2c95f7142e87191e8ed6cbf516b839d4b1b4`. All 23 uploaded PNG Git object hashes
+match the local original assets, and the remote source tree matches the complete
+local tree. Normal Git push failed with `Failed to connect to proxy port 8080`;
+the connected GitHub integration created the commit and feature branch instead.
+A subsequent documentation commit records this verification; the final chat
+report gives the final remote branch-head hash. No force-push, merge or Firebase
+deployment was performed.
 
 ## Approved decisions and implementation
 
