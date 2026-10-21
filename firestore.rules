@@ -3,6 +3,36 @@ service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
     function owns(uid) { return signedIn() && request.auth.uid == uid; }
+    function configuredVendor(uid) {
+      let profile = get(/databases/$(database)/documents/users/$(uid)).data;
+      return owns(uid) && profile.role == 'vendor'
+        && profile.stallSetupComplete == true && profile.stallId == uid;
+    }
+    function validStallPicture(id) {
+      return id is string && id in [
+        'bento', 'bibimbap', 'burger', 'cake',
+        'chinese_food_1', 'chinese_food_2', 'chinese_food_3', 'chinese_food_4',
+        'coffee', 'dessert', 'drink', 'fruit_juice', 'icecream', 'japanese_1',
+        'japanese_curry', 'korean_ramen', 'malay_drinks', 'malay_food',
+        'nasi_lemak', 'sushi', 'teh_ais', 'tteokbokki', 'western_food'
+      ];
+    }
+    function validStallUpdate(data, uid) {
+      return data.keys().hasAll(['ownerUid', 'name', 'category', 'preparationMinutes', 'status', 'createdAt', 'updatedAt'])
+        && data.ownerUid == uid && data.ownerUid == resource.data.ownerUid
+        && data.createdAt == resource.data.createdAt
+        && data.updatedAt is timestamp && data.updatedAt == request.time
+        && data.name is string && data.name.size() > 0 && data.name.size() <= 100
+        && data.name.matches('.*\\S.*')
+        && data.category is string && data.category in ['Malay', 'Western', 'Chinese', 'Japanese', 'Korean', 'Beverage', 'Dessert']
+        && data.preparationMinutes is int && data.preparationMinutes >= 1 && data.preparationMinutes <= 180
+        && data.status in ['open', 'closed']
+        && (!('pictureId' in data) || validStallPicture(data.pictureId))
+        // Other existing fields are preserved; new unapproved fields, removals
+        // or changes to ownership, creation time and queue/order data are denied.
+        && data.diff(resource.data).affectedKeys()
+          .hasOnly(['name', 'category', 'preparationMinutes', 'status', 'pictureId', 'updatedAt']);
+    }
     function validProfile(data, uid) {
       return data.keys().hasAll(['uid', 'fullName', 'email', 'phoneNumber', 'role', 'createdAt', 'stallSetupComplete', 'stallId'])
         && data.keys().hasOnly(['uid', 'fullName', 'email', 'phoneNumber', 'role', 'createdAt', 'stallSetupComplete', 'stallId'])
@@ -43,7 +73,8 @@ service cloud.firestore {
     match /stalls/{stallId} {
       // Owners must be able to read the absent document in a transaction.
       allow get: if owns(stallId);
-      allow list, update, delete: if false;
+      allow list, delete: if false;
+      allow update: if configuredVendor(stallId) && validStallUpdate(request.resource.data, stallId);
       allow create: if owns(stallId) && validStall(request.resource.data, stallId)
         && get(/databases/$(database)/documents/users/$(stallId)).data.role == 'vendor'
         && get(/databases/$(database)/documents/users/$(stallId)).data.stallSetupComplete == false

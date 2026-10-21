@@ -11,6 +11,7 @@ import 'package:cloud_firestore_web/cloud_firestore_web.dart';
 import 'package:flutter_web_plugins/flutter_web_plugins.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:my_fyp_app/models/user_profile.dart';
+import 'package:my_fyp_app/models/vendor_stall.dart';
 import 'package:my_fyp_app/services/auth_repository.dart';
 import 'package:my_fyp_app/services/firebase_auth_repository.dart';
 
@@ -136,6 +137,46 @@ void main() {
       expect((await repository.watchProfile().first)!.stallSetupComplete, true);
     },
   );
+
+  test('Dart Vendor operations persist status/settings/picture and preserve immutable fields', () async {
+    final email = 'vendor-ops-${DateTime.now().microsecondsSinceEpoch}@example.com';
+    await repository.register(fullName: 'Synthetic Vendor', email: email,
+      phoneNumber: '0123456789', password: 'Password123', role: AccountRole.vendor);
+    await repository.setupStall('Original Kitchen', 'Malay', 15);
+    final uid = repository.uid!;
+    final ref = db.collection('stalls').doc(uid);
+    final before = (await ref.get()).data()!;
+    final opening = repository.setStallOpen(true);
+    await expectLater(repository.setStallOpen(false), throwsA(isA<AccountException>()));
+    await opening;
+    expect((await repository.watchVendorStall().firstWhere((s) => !s.isCached)).isOpen, true);
+    await repository.updateStallSettings(StallSettings(name: 'Updated Kitchen', category: 'Japanese',
+      preparationMinutes: 20, pictureId: 'bento'));
+    final saved = (await ref.get(const GetOptions(source: Source.server))).data()!;
+    expect(saved['pictureId'], 'bento');
+    expect(saved['name'], 'Updated Kitchen');
+    expect(saved['ownerUid'], before['ownerUid']);
+    expect(saved['createdAt'], before['createdAt']);
+    expect(saved['updatedAt'], isA<Timestamp>());
+    await repository.setStallOpen(false);
+    await repository.logout();
+    await waitFor(() => repository.uid == null);
+    await expectLater(repository.setStallOpen(true), throwsA(isA<AccountException>()));
+    await repository.login(email, 'Password123');
+    await waitFor(() => repository.uid != null);
+    final restored = await repository.watchVendorStall().firstWhere((s) => !s.isCached);
+    expect(restored.pictureId, 'bento');
+    expect(restored.category, 'Japanese');
+    expect(restored.preparationMinutes, 20);
+    expect(restored.isOpen, false);
+  });
+
+  test('Dart Student service cannot update a stall', () async {
+    final email = 'ops-student-${DateTime.now().microsecondsSinceEpoch}@example.com';
+    await repository.register(fullName: 'Synthetic Student', email: email,
+      phoneNumber: '0123456789', password: 'Password123', role: AccountRole.student);
+    await expectLater(repository.setStallOpen(true), throwsA(isA<AccountException>()));
+  });
 
   test(
     'Dart Firebase service: partial registration is signed out and recoverable',

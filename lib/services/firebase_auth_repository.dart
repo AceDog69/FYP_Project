@@ -16,6 +16,7 @@ class FirebaseAuthRepository extends AuthRepository {
   late final StreamSubscription<User?> _subscription;
   User? _user;
   bool _ready = false, _registering = false;
+  bool _stallWritePending = false;
   @override
   bool get authReady => _ready;
   @override
@@ -96,6 +97,45 @@ class FirebaseAuthRepository extends AuthRepository {
       );
     }
   }
+
+  Future<void> _updateOwnStall(Map<String, dynamic> changes) async {
+    if (_stallWritePending) {
+      throw const AccountException('A stall update is already in progress.');
+    }
+    final vendorUid = uid;
+    if (vendorUid == null) throw const AccountException('Please sign in again.');
+    _stallWritePending = true;
+    try {
+      final stallRef = db.collection('stalls').doc(vendorUid);
+      // Firestore transactions require a server connection and acknowledge the
+      // commit. They do not queue an offline status/settings update for later.
+      await db.runTransaction((tx) async {
+        final user = await tx.get(db.collection('users').doc(vendorUid));
+        final stall = await tx.get(stallRef);
+        if (uid != vendorUid || user.data()?['role'] != 'vendor' ||
+            user.data()?['stallSetupComplete'] != true ||
+            user.data()?['stallId'] != vendorUid || !stall.exists) {
+          throw const AccountException('A verified Vendor stall is required.');
+        }
+        VendorStall.fromMap(vendorUid, stall.data()!);
+        tx.update(stallRef, {...changes, 'updatedAt': FieldValue.serverTimestamp()});
+      });
+    } finally {
+      _stallWritePending = false;
+    }
+  }
+
+  @override
+  Future<void> setStallOpen(bool open) =>
+      _updateOwnStall({'status': open ? 'open' : 'closed'});
+
+  @override
+  Future<void> updateStallSettings(StallSettings settings) => _updateOwnStall({
+    'name': settings.name,
+    'category': settings.category,
+    'preparationMinutes': settings.preparationMinutes,
+    'pictureId': settings.pictureId,
+  });
 
   Future<void> _createProfile(
     User user,

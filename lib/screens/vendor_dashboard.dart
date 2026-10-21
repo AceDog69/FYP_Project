@@ -3,6 +3,8 @@ import '../models/vendor_stall.dart';
 import '../services/auth_repository.dart';
 import '../services/error_messages.dart';
 import '../theme/app_theme.dart';
+import '../widgets/auth_widgets.dart';
+import '../widgets/stall_picture_picker.dart';
 
 class VendorDashboard extends StatefulWidget {
   const VendorDashboard({
@@ -21,6 +23,22 @@ class VendorDashboard extends StatefulWidget {
 
 class _VendorDashboardState extends State<VendorDashboard> {
   late Stream<VendorStall> _stall;
+  bool _busy = false;
+  String? _error;
+
+  Future<void> _setOpen(VendorStall stall) async {
+    if (_busy || stall.isCached) return;
+    setState(() { _busy = true; _error = null; });
+    try {
+      await widget.repository.setStallOpen(!stall.isOpen);
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(stall.isOpen ? 'Stall closed.' : 'Stall opened.')));
+    } catch (error) {
+      if (mounted) setState(() => _error = friendlyError(error));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
 
   @override
   void initState() {
@@ -55,6 +73,9 @@ class _VendorDashboardState extends State<VendorDashboard> {
   );
 
   Widget _information(VendorStall stall) => _card('My Stall', [
+    Align(alignment: Alignment.centerLeft,
+      child: StallPicture(stall.displayPictureId)),
+    const SizedBox(height: 12),
     Text(stall.name, style: Theme.of(context).textTheme.titleLarge),
     const SizedBox(height: 6),
     Text(stall.category, style: const TextStyle(color: mutedText)),
@@ -81,15 +102,18 @@ class _VendorDashboardState extends State<VendorDashboard> {
     Text('${stall.preparationMinutes} minutes'),
     const SizedBox(height: 16),
     OutlinedButton(
-      onPressed: null,
-      child: Text(stall.isOpen ? 'Close Stall' : 'Open Stall'),
+      onPressed: _busy || stall.isCached ? null : () => _setOpen(stall),
+      child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+        if (_busy) ...[
+          const SizedBox(width: 16, height: 16,
+            child: CircularProgressIndicator(strokeWidth: 2)),
+          const SizedBox(width: 10),
+        ],
+        Text(stall.isOpen ? 'Close Stall' : 'Open Stall'),
+      ]),
     ),
     const SizedBox(height: 8),
-    const Text(
-      'Stall status changes are unavailable in this version. '
-      'Open/Close will be enabled in Stage 2A-02.',
-      style: TextStyle(color: mutedText, fontSize: 12),
-    ),
+    ErrorMessage(_error),
   ]);
 
   @override

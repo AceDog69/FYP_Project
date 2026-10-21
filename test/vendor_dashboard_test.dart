@@ -37,7 +37,7 @@ void main() {
     }
   });
 
-  testWidgets('dashboard displays real stall values with a disabled status action', (tester) async {
+  testWidgets('dashboard displays real stall values with an enabled status action', (tester) async {
     final repo = await launchVendor(tester);
     expect(repo.stallReads, 1);
     expect(find.text('Campus Kitchen'), findsNWidgets(2));
@@ -45,8 +45,7 @@ void main() {
     expect(find.text('Closed'), findsOneWidget);
     expect(find.text('15 minutes'), findsOneWidget);
     final action = find.ancestor(of: find.text('Open Stall'), matching: find.byType(OutlinedButton));
-    expect(tester.widget<OutlinedButton>(action).onPressed, isNull);
-    expect(find.textContaining('Stage 2A-02'), findsOneWidget);
+    expect(tester.widget<OutlinedButton>(action).onPressed, isNotNull);
     expect(tester.widget<BottomNavigationBar>(find.byType(BottomNavigationBar)).items
       .map((item) => item.label), ['Dashboard', 'Orders', 'Menu', 'Profile']);
   });

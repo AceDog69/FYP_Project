@@ -8,6 +8,8 @@ abstract class AuthRepository extends ChangeNotifier {
   String? get email;
   Stream<UserProfile?> watchProfile();
   Stream<VendorStall> watchVendorStall();
+  Future<void> setStallOpen(bool open);
+  Future<void> updateStallSettings(StallSettings settings);
   Future<void> login(String email, String password);
   Future<void> register({
     required String fullName,

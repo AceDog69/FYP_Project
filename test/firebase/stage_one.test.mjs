@@ -97,7 +97,7 @@ test('stall ownership, closed status and preparation bounds are enforced', async
   assert.equal((await getDoc(doc(db,'users','vendor'))).data().stallSetupComplete,false);
   assert.equal((await getDoc(doc(db,'stalls','vendor'))).exists(),false);
 });
-test('completed stalls cannot be reassigned, reset, duplicated or edited', async () => {
+test('completed stalls cannot be reassigned, reset, duplicated or deleted', async () => {
   const db = dbFor('vendor'); await create(db,'vendor','vendor'); await setup(db,'vendor');
   await assertFails(updateDoc(doc(db,'users','vendor'),{stallSetupComplete:false,stallId:null}));
   await assertFails(updateDoc(doc(db,'users','vendor'),{stallId:'other'}));

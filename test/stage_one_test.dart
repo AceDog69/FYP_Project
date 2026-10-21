@@ -37,6 +37,36 @@ class TestRepository extends AuthRepository {
   int stallReads = 0;
   bool stallLoading = false;
   Object? dashboardError;
+  Object? stallWriteError;
+  Completer<void>? pendingStallWrite;
+  int statusWrites = 0, settingsWrites = 0;
+  final savedSettings = <StallSettings>[];
+
+  Future<void> _finishStallWrite() async {
+    if (pendingStallWrite != null) await pendingStallWrite!.future;
+    if (stallWriteError != null) throw stallWriteError!;
+  }
+
+  @override
+  Future<void> setStallOpen(bool open) async {
+    statusWrites++;
+    await _finishStallWrite();
+    currentStall = VendorStall(name: currentStall.name, category: currentStall.category,
+      preparationMinutes: currentStall.preparationMinutes, isOpen: open,
+      pictureId: currentStall.pictureId);
+    stallChanges.add(currentStall);
+  }
+
+  @override
+  Future<void> updateStallSettings(StallSettings settings) async {
+    settingsWrites++;
+    await _finishStallWrite();
+    savedSettings.add(settings);
+    currentStall = VendorStall(name: settings.name, category: settings.category,
+      preparationMinutes: settings.preparationMinutes, isOpen: currentStall.isOpen,
+      pictureId: settings.pictureId);
+    stallChanges.add(currentStall);
+  }
 
   @override
   Stream<VendorStall> watchVendorStall() async* {
