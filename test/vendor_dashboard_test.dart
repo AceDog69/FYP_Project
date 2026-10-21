@@ -110,7 +110,7 @@ void main() {
     await tester.ensureVisible(find.text('Manage Menu'));
     await tester.pumpAndSettle();
     await stage.tap(tester, 'Manage Menu');
-    expect(find.text('Coming soon'), findsOneWidget);
+    expect(find.text('No food items yet'), findsOneWidget);
     await stage.tap(tester, 'Profile');
     expect(find.text('alex@example.com'), findsOneWidget);
     await stage.tap(tester, 'Logout');

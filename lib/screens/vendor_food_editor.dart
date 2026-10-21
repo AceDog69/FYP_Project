@@ -25,7 +25,8 @@ class _VendorFoodEditorState extends State<VendorFoodEditor> {
   late final _name = TextEditingController(text: widget.original?.draft.name ?? '');
   late final _description = TextEditingController(text: widget.original?.draft.description ?? '');
   late final _price = TextEditingController(text: widget.original == null ? '' : rm(widget.original!.draft.priceSen).substring(3));
-  late String? _category = widget.original?.draft.categoryId;
+  late String? _category = widget.categories.any((c) => c.id == widget.original?.draft.categoryId)
+      ? widget.original?.draft.categoryId : null;
   late String? _picture = widget.original?.draft.pictureId;
   late bool _available = widget.original?.draft.available ?? true;
   bool _busy = false;

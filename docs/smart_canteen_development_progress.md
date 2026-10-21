@@ -1,6 +1,6 @@
 # Smart Canteen development progress
 
-Updated 21 October 2026 (Asia/Singapore). Supervisor meeting: 28 October 2026.
+Updated 22 October 2026 (Asia/Singapore). Supervisor meeting: 28 October 2026.
 
 ## Milestones and source
 
@@ -10,6 +10,7 @@ Updated 21 October 2026 (Asia/Singapore). Supervisor meeting: 28 October 2026.
 | Stage 2A-01 Dashboard source | `fb9760731474fe80257c8d753b6e6f90d03330bb` |
 | Latest Stage 2A-01 fixes, verified through GitHub before editing | `01b08d15ab2bc48d87caa497c0c54fbdc35b80d8` |
 | Stage 2A-02 implementation; runtime/security acceptance pending | `d76c2c95f7142e87191e8ed6cbf516b839d4b1b4` |
+| Stage 2A-02 Windows emulator/launcher fixes, accepted by user | `eff8c6e5235314a5e6c74af06cbbc17e07873ddf` |
 
 Stage 2A-01 was verified by the user on a Windows Pixel 6 Android emulator:
 analysis passed, 23 combined Flutter tests passed, and Dashboard navigation,
@@ -260,3 +261,109 @@ was absent in this environment. No new code is compiled or Android-tested yet.
 No rules are deployed; local demo emulators must be used for validation. Existing
 order snapshots are protected conceptually by never touching any order path.
 This checkpoint is to be committed and remotely verified before further tests.
+
+### Stage 2A-03 closeout and remaining work
+
+Intermediate core backup verified on GitHub **before** adding tests:
+`ee929c81533aad48e0950217688ebea25246eee1` on
+`feature/stage-2a-03-vendor-menu`. Final branch-head verification is reported in
+chat. Continue from that latest verified remote HEAD, never recreate from Stage 1.
+
+Added runnable Flutter tests cover precise RM parsing/bounds, category normalization,
+empty Menu, category creation/duplicate rejection, food field validation, failed
+Save retaining draft, scrolling the existing picker, edit/reassignment/availability,
+disabled deletes, confirmation Cancel, loading/error/cache/Retry, four tabs and
+Logout. Existing Vendor navigation regression expectations now assert the real
+empty Menu, and shared fixtures provide a synthetic menu repository. Existing
+Stall Settings picker/operations tests are retained. No additional images,
+dependencies, Android configuration or debug launcher changes were introduced.
+
+New `test/firebase/vendor_menu.test.mjs` exercises normal creation/edit/reassignment,
+unavailable-food references, atomic category rename and name uniqueness races,
+malicious/ghost/duplicate references, invalid fields/prices/ownership/timestamps,
+revision checks, cross-Vendor/Student attacks, blocked destructive writes and
+creation/reassignment races against the **always-denied category delete**.
+These last race tests prove the intended gate behavior only when executed; they
+are not a positive proof of safe empty-category deletion. No new order documents
+are created in tests. Menu writes only touch menu paths; future checkout still
+needs immutable item snapshots (name, price and quantity) in confirmed orders.
+
+Actual execution on 22 October:
+
+| Check | Observed result |
+| --- | --- |
+| `flutter analyze` | Did not start: Dart SDK bootstrap cannot connect to proxy port 8080; exit 7 |
+| `flutter test` | Did not start: same missing SDK / proxy failure; exit 7 |
+| `npm run test:menu` | Did not start: Firebase CLI not found; exit 127 |
+| `npm test`, `npm run test:vendor` | Did not start: Firebase CLI not found; exit 127 |
+| `npm run test:dart` | Did not start here; existing user-reported Chrome loading stall remains unresolved |
+| Node syntax checks: Stage 1, operations, menu modules | Passed syntax only |
+| Git whitespace and protected-file comparisons | Passed |
+
+Flutter/security test counts for this batch: **0 executed, 0 passed, 0 test-case
+failures observed**. Bootstrap/launcher failures above are not passing tests.
+P0-C: **not reproduced**. No new code or rules were compiled in this environment.
+Manual Pixel 6 acceptance remains pending. The two historical informational lint
+messages cannot be confirmed/resolved without working analysis or their output;
+do not claim that informational analysis is clean.
+
+Static rules budget review (not emulator measurements): a food+membership batch
+has at most eight written get/getAfter calls before caching, each write path at
+most four; category create/name-reservation at most four total, rename at most
+seven across three writes. These estimates are below Firestore's 10-per-write and
+20-per-atomic-operation access limits. Actual evaluation/expression counts and the
+1000-expression limit have **not** been measured. Re-evaluate if rules/schema are
+changed. The canonical membership design intentionally has no category scan,
+unbounded membership arrays or client-maintained unprotected counters. A reviewed
+empty-category deletion proof/design is still required; do not simply remove
+`allow delete: if false` or flip the food-delete gate to obtain a passing UI.
+
+Remaining implementation/acceptance gaps: positive Food Delete through the default
+safety gate, positive empty Category Delete, deletion proof/races and measured rules
+budgets; full executed Flutter/security regression; Pixel 6 UI and new-food happy
+path acceptance; review of missing E-D01/E-D02/E-S03 visuals. The food deletion
+transaction/confirmation is present but blocked; category deletion is not enabled.
+This is a preserved partial Stage 2A-03 delivery, not a declaration of completeness.
+
+Windows commands (use local demo emulators, never production testing):
+
+```powershell
+git fetch origin
+git switch --track origin/feature/stage-2a-03-vendor-menu
+flutter pub get --enforce-lockfile
+flutter analyze
+flutter test
+Push-Location test/firebase
+npm ci
+npm test
+npm run test:vendor
+npm run test:menu
+# Optional existing Chrome runner; do not wait indefinitely if loading stalls:
+npm run test:dart
+Pop-Location
+```
+
+Run npm suites sequentially. Start Firebase in another terminal from repo root:
+
+```powershell
+.\test\firebase\node_modules\.bin\firebase.cmd emulators:start --project demo-smart-canteen --only auth,firestore --config firebase.json
+flutter run --debug -d <pixel-6-emulator-id> -t lib/main_emulator.dart --dart-define=EMULATOR_HOST=10.0.2.2
+```
+
+Register synthetic Vendors/Student, complete unchanged Stall Setup, create Rice and
+Drinks categories, reject a duplicate ` rice `, Add Food with RM 8.50 and a picture
+beyond the initial choices, Edit and reassign it, toggle Unavailable and confirm it
+remains in the menu. Cancel drafts/dialogs and retry failed Saves; provoke a stale
+revision from a second client and ensure it is not silently overwritten. Test
+cached/read-error states, Orders placeholder, Profile/Logout and previous Stall
+Settings picker. Both Delete actions must remain blocked with an explanation.
+Prove rules locally and review before enabling any destructive operation. The
+updated menu rules have not been deployed; normal live rules will not provide
+these new menu permissions until a separate authorized deployment.
+
+Recommendation: **hold approval for Stage 2B** until the core menu has compiled,
+passed security/Flutter tests and Android acceptance, and deletion proof/gates are
+resolved or explicitly scoped by review. Stage 2B browsing/read rules, Stage 2C
+Cart/checkout/immutable order snapshots, and Stage 3 queue/FCFS/ETA/in-app Ready
+notifications remain unimplemented. No merge, deployment, billing change or
+production migration is part of this work.

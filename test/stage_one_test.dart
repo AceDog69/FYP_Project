@@ -8,6 +8,7 @@ import 'package:my_fyp_app/models/vendor_stall.dart';
 import 'package:my_fyp_app/services/auth_repository.dart';
 import 'package:my_fyp_app/services/validators.dart';
 import 'package:my_fyp_app/widgets/auth_widgets.dart';
+import 'support/fake_menu_repository.dart';
 
 UserProfile profile(AccountRole role, {bool setup = false}) => UserProfile(
   uid: 'test-user',
@@ -22,6 +23,8 @@ UserProfile profile(AccountRole role, {bool setup = false}) => UserProfile(
 // UI tests use an explicit test double. Firebase/rules are tested separately
 // against local emulators, never against the production project.
 class TestRepository extends AuthRepository {
+  @override
+  final menuRepository = FakeMenuRepository();
   bool ready = true;
   String? currentUid;
   UserProfile? currentProfile, nextProfile;
@@ -149,6 +152,7 @@ class TestRepository extends AuthRepository {
 
   @override
   void dispose() {
+    menuRepository.dispose();
     stallChanges.close();
     profiles.close();
     super.dispose();
@@ -369,7 +373,7 @@ void main() {
       expect(find.text('Cart'), findsNothing);
       expect(find.text('Queue'), findsNothing);
       await tap(tester, 'Menu');
-      expect(find.text('Coming soon'), findsOneWidget);
+      expect(find.text('No food items yet'), findsOneWidget);
       await tap(tester, 'Profile');
       await tap(tester, 'Logout');
       repo.nextProfile = repo.currentProfile;
