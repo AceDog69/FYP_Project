@@ -213,3 +213,50 @@ Vendor Menu Management with a reproduced protected category-reference design and
 emulator security proof. Student browsing, food/cart/checkout, tickets/FCFS, queue,
 ETA and notifications remain later work. No next milestone, merge or deployment
 is authorized by completion of this batch.
+
+## Stage 2A-03 — core checkpoint, 22 October 2026
+
+Required base verified through connected GitHub and imported exactly:
+`eff8c6e5235314a5e6c74af06cbbc17e07873ddf`. User-confirmed Stage 2A-02:
+31 Flutter tests, 14 Stage 1 + 20 Vendor Operations rules tests, and Pixel 6
+Android acceptance passed. Chrome/Dart loading stalled and remains incomplete.
+The debug HTTP manifest and Windows launcher fixes are preserved.
+
+Core source implemented: Vendor Menu tab; own-stall context; category creation
+and stable-ID renaming with case-insensitive duplicate protection; Add/Edit Food,
+integer-sen RM prices, existing picture picker, availability and atomic category
+reassignment; cached/loading/error/empty states and optimistic revision checks.
+No sample order or production Firebase data is written. E-D01/E-D02/E-S03 PNGs
+are unavailable; written behavior is used without claiming missing visual approval.
+V2-02, V2-03A/B and category-management screenshots were inspected.
+
+Schema under `stalls/{vendorUid}`: `menuCategories/{categoryId}` stores name,
+canonical lowercase `nameKey`, owner, revision and server timestamps;
+`menuCategoryNames/{nameKey}` reserves the name for one stable category ID;
+`menuFoods/{foodId}` stores owner, category, name, description, integer `priceSen`,
+picture ID, availability, revision and server timestamps;
+`menuMemberships/{foodId}` is the unique canonical active category reference.
+Rules require food and membership after-states to agree. Reassignment replaces
+the one active category reference in the same transaction. Unavailable food retains
+its membership. Categories cannot be deleted by any client in this checkpoint.
+
+Limits: category names 1–50 characters, trimmed/collapsed whitespace, no slash or
+reserved Firestore document names; food names 1–100; description required 1–500;
+price RM 0.01–1000.00 (1–100000 sen), at most two input decimal places.
+Category names are unique per Vendor ignoring case/extra whitespace. Existing
+23 PNGs/IDs are reused without duplication. No Student catalog access is added.
+
+**Not complete:** P0-C has not been reproduced. Food deletion is implemented as
+an atomic service operation but visibly disabled in production and denied by the
+`menuDeletesEnabled()` rules gate; category deletion is unconditionally denied.
+No unprotected empty-category check or counter is substituted. Empty-category
+DELETE and deletion races need a reviewed, emulator-proven design before enabling.
+Food Delete confirmation exists but cannot execute against the default safety gate.
+Do not claim the full requested deletion workflow is ready.
+
+At this core checkpoint: additional tests and analyzer review remain pending.
+Flutter SDK is absent and its download uses an unreachable proxy; Firebase CLI
+was absent in this environment. No new code is compiled or Android-tested yet.
+No rules are deployed; local demo emulators must be used for validation. Existing
+order snapshots are protected conceptually by never touching any order path.
+This checkpoint is to be committed and remotely verified before further tests.

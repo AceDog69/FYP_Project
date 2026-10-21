@@ -1,8 +1,10 @@
 import 'package:flutter/foundation.dart';
 import '../models/user_profile.dart';
 import '../models/vendor_stall.dart';
+import 'vendor_menu_repository.dart';
 
 abstract class AuthRepository extends ChangeNotifier {
+  VendorMenuRepository? get menuRepository => null;
   bool get authReady;
   String? get uid;
   String? get email;

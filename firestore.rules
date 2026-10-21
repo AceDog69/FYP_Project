@@ -33,6 +33,50 @@ service cloud.firestore {
         && data.diff(resource.data).affectedKeys()
           .hasOnly(['name', 'category', 'preparationMinutes', 'status', 'pictureId', 'updatedAt']);
     }
+    // Safety gate: do not enable destructive menu writes before emulator proof
+    // and review. Category deletion remains denied even when this gate changes.
+    function menuDeletesEnabled() { return false; }
+    function categoryPath(uid, id) {
+      return /databases/$(database)/documents/stalls/$(uid)/menuCategories/$(id);
+    }
+    function foodPath(uid, id) {
+      return /databases/$(database)/documents/stalls/$(uid)/menuFoods/$(id);
+    }
+    function membershipPath(uid, id) {
+      return /databases/$(database)/documents/stalls/$(uid)/menuMemberships/$(id);
+    }
+    function categoryNamePath(uid, key) {
+      return /databases/$(database)/documents/stalls/$(uid)/menuCategoryNames/$(key);
+    }
+    function validMenuCategory(d, uid) {
+      return d.keys().hasAll(['vendorUid','name','nameKey','revision','createdAt','updatedAt'])
+        && d.keys().hasOnly(['vendorUid','name','nameKey','revision','createdAt','updatedAt'])
+        && d.vendorUid == uid && d.name is string && d.name.size() >= 1 && d.name.size() <= 50
+        && d.name.matches('^[^\\s/]+( [^\\s/]+)*$')
+        && d.nameKey == d.name.lower() && !(d.nameKey in ['.','..'])
+        && !d.nameKey.matches('__.*__')
+        && d.revision is int && d.revision >= 1 && d.createdAt is timestamp
+        && d.updatedAt == request.time;
+    }
+    function validMenuFood(d, uid) {
+      return d.keys().hasAll(['vendorUid','name','description','priceSen','categoryId','pictureId','available','revision','createdAt','updatedAt'])
+        && d.keys().hasOnly(['vendorUid','name','description','priceSen','categoryId','pictureId','available','revision','createdAt','updatedAt'])
+        && d.vendorUid == uid && d.name is string && d.name.size() >= 1 && d.name.size() <= 100
+        && d.name.matches('^\\S([\\s\\S]*\\S)?$')
+        && d.description is string && d.description.size() >= 1 && d.description.size() <= 500
+        && d.description.matches('^\\S([\\s\\S]*\\S)?$')
+        && d.priceSen is int && d.priceSen >= 1 && d.priceSen <= 100000
+        && d.categoryId is string && d.categoryId.size() >= 1 && d.categoryId.size() <= 128
+        && d.categoryId.matches('^[^/]+$')
+        && validStallPicture(d.pictureId) && d.available is bool
+        && d.revision is int && d.revision >= 1 && d.createdAt is timestamp
+        && d.updatedAt == request.time;
+    }
+    function linkedFood(uid, id, categoryId) {
+      return getAfter(categoryPath(uid, categoryId)).data.vendorUid == uid
+        && getAfter(membershipPath(uid, id)).data.vendorUid == uid
+        && getAfter(membershipPath(uid, id)).data.categoryId == categoryId;
+    }
     function validProfile(data, uid) {
       return data.keys().hasAll(['uid', 'fullName', 'email', 'phoneNumber', 'role', 'createdAt', 'stallSetupComplete', 'stallId'])
         && data.keys().hasOnly(['uid', 'fullName', 'email', 'phoneNumber', 'role', 'createdAt', 'stallSetupComplete', 'stallId'])
@@ -80,6 +124,61 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/users/$(stallId)).data.stallSetupComplete == false
         && getAfter(/databases/$(database)/documents/users/$(stallId)).data.stallSetupComplete == true
         && getAfter(/databases/$(database)/documents/users/$(stallId)).data.stallId == stallId;
+
+      match /menuCategories/{categoryId} {
+        allow read: if configuredVendor(stallId);
+        allow create: if configuredVendor(stallId) && validMenuCategory(request.resource.data, stallId)
+          && request.resource.data.revision == 1 && request.resource.data.createdAt == request.time
+          && getAfter(categoryNamePath(stallId, request.resource.data.nameKey)).data.categoryId == categoryId;
+        allow update: if configuredVendor(stallId) && validMenuCategory(request.resource.data, stallId)
+          && request.resource.data.createdAt == resource.data.createdAt
+          && request.resource.data.revision == resource.data.revision + 1
+          && getAfter(categoryNamePath(stallId, request.resource.data.nameKey)).data.categoryId == categoryId
+          && (request.resource.data.nameKey == resource.data.nameKey
+            || !existsAfter(categoryNamePath(stallId, resource.data.nameKey)));
+        allow delete: if false;
+      }
+      match /menuCategoryNames/{key} {
+        allow read: if configuredVendor(stallId);
+        allow create: if configuredVendor(stallId)
+          && request.resource.data.keys().hasAll(['vendorUid','categoryId'])
+          && request.resource.data.keys().hasOnly(['vendorUid','categoryId'])
+          && request.resource.data.vendorUid == stallId
+          && request.resource.data.categoryId is string
+          && request.resource.data.categoryId.size() >= 1 && request.resource.data.categoryId.size() <= 128
+          && request.resource.data.categoryId.matches('^[^/]+$')
+          && getAfter(categoryPath(stallId, request.resource.data.categoryId)).data.nameKey == key;
+        allow update: if false;
+        allow delete: if configuredVendor(stallId)
+          && getAfter(categoryPath(stallId, resource.data.categoryId)).data.nameKey != key;
+      }
+      match /menuFoods/{foodId} {
+        allow read: if configuredVendor(stallId);
+        allow create: if configuredVendor(stallId) && validMenuFood(request.resource.data, stallId)
+          && request.resource.data.createdAt == request.time && request.resource.data.revision == 1
+          && linkedFood(stallId, foodId, request.resource.data.categoryId);
+        allow update: if configuredVendor(stallId) && validMenuFood(request.resource.data, stallId)
+          && request.resource.data.createdAt == resource.data.createdAt
+          && request.resource.data.revision == resource.data.revision + 1
+          && linkedFood(stallId, foodId, request.resource.data.categoryId);
+        allow delete: if menuDeletesEnabled() && configuredVendor(stallId)
+          && !existsAfter(membershipPath(stallId, foodId));
+      }
+      match /menuMemberships/{foodId} {
+        allow read: if configuredVendor(stallId);
+        allow create, update: if configuredVendor(stallId)
+          && request.resource.data.keys().hasAll(['vendorUid','categoryId'])
+          && request.resource.data.keys().hasOnly(['vendorUid','categoryId'])
+          && request.resource.data.vendorUid == stallId
+          && request.resource.data.categoryId is string
+          && request.resource.data.categoryId.size() >= 1 && request.resource.data.categoryId.size() <= 128
+          && request.resource.data.categoryId.matches('^[^/]+$')
+          && getAfter(foodPath(stallId, foodId)).data.vendorUid == stallId
+          && getAfter(foodPath(stallId, foodId)).data.categoryId == request.resource.data.categoryId
+          && getAfter(categoryPath(stallId, request.resource.data.categoryId)).data.vendorUid == stallId;
+        allow delete: if menuDeletesEnabled() && configuredVendor(stallId)
+          && !existsAfter(foodPath(stallId, foodId));
+      }
     }
     match /{document=**} { allow read, write: if false; }
   }

@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../models/user_profile.dart';
 import '../models/vendor_stall.dart';
 import 'auth_repository.dart';
+import 'vendor_menu_repository.dart';
 
 class FirebaseAuthRepository extends AuthRepository {
   FirebaseAuthRepository(this.auth, this.db) {
@@ -13,6 +14,8 @@ class FirebaseAuthRepository extends AuthRepository {
   }
   final FirebaseAuth auth;
   final FirebaseFirestore db;
+  @override
+  late final VendorMenuRepository menuRepository = FirebaseVendorMenuRepository(db, () => uid);
   late final StreamSubscription<User?> _subscription;
   User? _user;
   bool _ready = false, _registering = false;
