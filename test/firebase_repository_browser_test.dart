@@ -113,6 +113,15 @@ void main() {
       expect(stall.data()!['preparationMinutes'], 15);
       expect(stall.data()!['ownerUid'], uid);
       expect(stall.data()!['status'], 'closed');
+      // The real Dart dashboard listener reads the existing own-stall document
+      // under unchanged rules, which deny stall collection queries.
+      final dashboard = await repository.watchVendorStall().firstWhere((stall) => !stall.isCached);
+      expect(dashboard.name, 'Campus Kitchen');
+      expect(dashboard.category, 'Malay');
+      expect(dashboard.preparationMinutes, 15);
+      expect(dashboard.isOpen, false);
+      final afterRead = await db.collection('stalls').doc(uid).get();
+      expect(afterRead.data(), stall.data());
       repository.dispose();
       repository = FirebaseAuthRepository(auth, db);
       await waitFor(() => repository.authReady);

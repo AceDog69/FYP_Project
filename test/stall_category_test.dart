@@ -116,7 +116,7 @@ void main() {
         minutes: 15,
       ));
       expect(repository.currentProfile!.stallSetupComplete, isTrue);
-      expect(find.text('Welcome, Vendor'), findsOneWidget);
+      expect(find.text('Vendor Dashboard'), findsOneWidget);
       await stage.tap(tester, 'Profile');
       await stage.tap(tester, 'Logout');
       expect(find.text('Welcome Back'), findsOneWidget);
@@ -157,7 +157,7 @@ void main() {
         tester.widget<DropdownButtonFormField<String>>(dropdown).onChanged,
         isNotNull,
       );
-      expect(find.text('Welcome, Vendor'), findsNothing);
+      expect(find.text('Vendor Dashboard'), findsNothing);
     },
   );
 }

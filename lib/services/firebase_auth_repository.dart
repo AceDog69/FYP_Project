@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/user_profile.dart';
+import '../models/vendor_stall.dart';
 import 'auth_repository.dart';
 
 class FirebaseAuthRepository extends AuthRepository {
@@ -68,6 +69,32 @@ class FirebaseAuthRepository extends AuthRepository {
       email: email.trim(),
       password: password,
     );
+  }
+
+  @override
+  Stream<VendorStall> watchVendorStall() async* {
+    final vendorUid = uid;
+    if (vendorUid == null) {
+      throw const AccountException('Please sign in again.');
+    }
+    // The authenticated UID selects exactly one document. Existing Stage 1
+    // rules authorize this owner read; no collection query or write is used.
+    await for (final doc in db.collection('stalls').doc(vendorUid)
+        .snapshots(includeMetadataChanges: true)) {
+      if (uid != vendorUid) {
+        throw const AccountException('Your session changed. Please sign in again.');
+      }
+      if (!doc.exists) {
+        throw const AccountException('Your stall could not be found. Please retry.');
+      }
+      // Do not present an unacknowledged local write as the current stall.
+      if (doc.metadata.hasPendingWrites) continue;
+      yield VendorStall.fromMap(
+        vendorUid,
+        doc.data()!,
+        isCached: doc.metadata.isFromCache,
+      );
+    }
   }
 
   Future<void> _createProfile(

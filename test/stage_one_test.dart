@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:my_fyp_app/main.dart';
 import 'package:my_fyp_app/models/user_profile.dart';
+import 'package:my_fyp_app/models/vendor_stall.dart';
 import 'package:my_fyp_app/services/auth_repository.dart';
 import 'package:my_fyp_app/services/validators.dart';
 import 'package:my_fyp_app/widgets/auth_widgets.dart';
@@ -29,6 +30,21 @@ class TestRepository extends AuthRepository {
   int loginCalls = 0, registerCalls = 0, resetCalls = 0, setupCalls = 0;
   AccountRole? registeredRole;
   final profiles = StreamController<UserProfile?>.broadcast();
+  final stallChanges = StreamController<VendorStall>.broadcast();
+  VendorStall currentStall = const VendorStall(
+    name: 'Campus Kitchen', category: 'Malay', preparationMinutes: 15, isOpen: false,
+  );
+  int stallReads = 0;
+  bool stallLoading = false;
+  Object? dashboardError;
+
+  @override
+  Stream<VendorStall> watchVendorStall() async* {
+    stallReads++;
+    if (dashboardError != null) throw dashboardError!;
+    if (!stallLoading) yield currentStall;
+    yield* stallChanges.stream;
+  }
   @override
   bool get authReady => ready;
   @override
@@ -89,6 +105,8 @@ class TestRepository extends AuthRepository {
   Future<void> setupStall(String name, String category, int minutes) async {
     setupCalls++;
     if (stallError != null) throw stallError!;
+    currentStall = VendorStall(name: name, category: category,
+      preparationMinutes: minutes, isOpen: false);
     currentProfile = profile(AccountRole.vendor, setup: true);
     profiles.add(currentProfile);
   }
@@ -101,6 +119,7 @@ class TestRepository extends AuthRepository {
 
   @override
   void dispose() {
+    stallChanges.close();
     profiles.close();
     super.dispose();
   }
@@ -306,7 +325,7 @@ void main() {
       await openStallCategory(tester);
       await tap(tester, 'Malay');
       await tap(tester, 'Complete Stall Setup');
-      expect(find.text('Welcome, Vendor'), findsOneWidget);
+      expect(find.text('Vendor Dashboard'), findsOneWidget);
       expect(
         tester
             .widget<BottomNavigationBar>(find.byType(BottomNavigationBar))
@@ -324,7 +343,7 @@ void main() {
       await fill(tester, 'Email Address', 'alex@example.com');
       await fill(tester, 'Password', 'Password123');
       await tap(tester, 'Login');
-      expect(find.text('Welcome, Vendor'), findsOneWidget);
+      expect(find.text('Vendor Dashboard'), findsOneWidget);
       expect(find.text('Set Up Your Stall'), findsNothing);
     },
   );
@@ -342,7 +361,7 @@ void main() {
     await tap(tester, 'Malay');
     await tap(tester, 'Complete Stall Setup');
     expect(find.text('Could not save stall.'), findsOneWidget);
-    expect(find.text('Welcome, Vendor'), findsNothing);
+    expect(find.text('Vendor Dashboard'), findsNothing);
   });
 
   testWidgets(
@@ -371,7 +390,7 @@ void main() {
     repo.session(profile(AccountRole.vendor, setup: true));
     addTearDown(repo.dispose);
     await launch(tester, repo);
-    expect(find.text('Welcome, Vendor'), findsOneWidget);
+    expect(find.text('Vendor Dashboard'), findsOneWidget);
     expect(find.text('Welcome Back'), findsNothing);
     expect(find.text('Welcome, Student'), findsNothing);
   });

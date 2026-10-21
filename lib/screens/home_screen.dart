@@ -4,6 +4,7 @@ import '../services/auth_repository.dart';
 import '../services/error_messages.dart';
 import '../theme/app_theme.dart';
 import '../widgets/auth_widgets.dart';
+import 'vendor_dashboard.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({
@@ -89,7 +90,7 @@ class _HomeScreenState extends State<HomeScreen> {
   );
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(
+    appBar: _vendor && _index == 0 ? null : AppBar(
       automaticallyImplyLeading: false,
       title: const Brand(),
       bottom: const PreferredSize(
@@ -99,7 +100,13 @@ class _HomeScreenState extends State<HomeScreen> {
     ),
     body: SafeArea(
       bottom: false,
-      child: _index == _labels.length - 1
+      child: _vendor && _index == 0
+          ? VendorDashboard(
+              repository: widget.repository,
+              onOrders: () => setState(() => _index = 1),
+              onMenu: () => setState(() => _index = 2),
+            )
+          : _index == _labels.length - 1
           ? _profile()
           : Center(
               child: SingleChildScrollView(

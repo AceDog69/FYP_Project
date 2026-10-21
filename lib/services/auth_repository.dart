@@ -1,11 +1,13 @@
 import 'package:flutter/foundation.dart';
 import '../models/user_profile.dart';
+import '../models/vendor_stall.dart';
 
 abstract class AuthRepository extends ChangeNotifier {
   bool get authReady;
   String? get uid;
   String? get email;
   Stream<UserProfile?> watchProfile();
+  Stream<VendorStall> watchVendorStall();
   Future<void> login(String email, String password);
   Future<void> register({
     required String fullName,
