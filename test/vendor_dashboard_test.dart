@@ -103,9 +103,13 @@ void main() {
 
   testWidgets('quick actions use existing tabs and Profile logout remains functional', (tester) async {
     await launchVendor(tester);
+    await tester.ensureVisible(find.text('View Orders'));
+    await tester.pumpAndSettle();
     await stage.tap(tester, 'View Orders');
     expect(find.text('Coming soon'), findsOneWidget);
     await stage.tap(tester, 'Dashboard');
+    await tester.ensureVisible(find.text('Manage Menu'));
+    await tester.pumpAndSettle();
     await stage.tap(tester, 'Manage Menu');
     expect(find.text('Coming soon'), findsOneWidget);
     await stage.tap(tester, 'Profile');

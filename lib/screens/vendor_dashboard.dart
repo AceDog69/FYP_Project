@@ -170,19 +170,31 @@ class _VendorDashboardState extends State<VendorDashboard> {
                         style: TextStyle(color: mutedText)),
                     ]),
                     _card('Quick Actions', [
-                      ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        leading: const Icon(Icons.receipt_long_outlined, color: primaryOrange),
-                        title: const Text('View Orders'),
-                        trailing: const Icon(Icons.chevron_right),
-                        onTap: widget.onOrders,
+                      Material(
+                        type: MaterialType.transparency,
+                        child: ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: const Icon(
+                            Icons.receipt_long_outlined,
+                            color: primaryOrange,
+                          ),
+                          title: const Text('View Orders'),
+                          trailing: const Icon(Icons.chevron_right),
+                          onTap: widget.onOrders,
+                        ),
                       ),
-                      ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        leading: const Icon(Icons.restaurant_menu_outlined, color: primaryOrange),
-                        title: const Text('Manage Menu'),
-                        trailing: const Icon(Icons.chevron_right),
-                        onTap: widget.onMenu,
+                      Material(
+                        type: MaterialType.transparency,
+                        child: ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: const Icon(
+                            Icons.restaurant_menu_outlined,
+                            color: primaryOrange,
+                          ),
+                          title: const Text('Manage Menu'),
+                          trailing: const Icon(Icons.chevron_right),
+                          onTap: widget.onMenu,
+                        ),
                       ),
                     ]),
                   ],
