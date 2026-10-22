@@ -1,7 +1,29 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer, connect } from 'node:net';
-import { checkoutTransport } from './checkout_transport.mjs';
+import { checkoutTransport, expectedOfflineRejection, boundedOfflineCleanup } from './checkout_transport.mjs';
+
+test('offline error classification requires the verified cut and exact RPC cancellation',()=>{
+  const cut={onlineVerified:true,transportCut:true};
+  const cancelled={code:'cancelled',message:'1 CANCELLED: Call cancelled'};
+  assert.equal(expectedOfflineRejection(cancelled,cut),true);
+  assert.equal(expectedOfflineRejection({code:'unavailable'},cut),true);
+  for(const state of [{onlineVerified:false,transportCut:true},{onlineVerified:true,transportCut:false}]) {
+    assert.equal(expectedOfflineRejection(cancelled,state),false);
+    assert.equal(expectedOfflineRejection({code:'unavailable'},state),false);
+  }
+  for(const error of [undefined,new Error('Call cancelled'),{code:1,message:cancelled.message},
+    {code:'cancelled',message:'Discarded checkout'}, {code:'cancelled',message:'Cancelled on client'},
+    {code:'permission-denied',message:cancelled.message}, {code:'deadline-exceeded'},
+    {code:'unknown',message:cancelled.message}, {code:'internal'}, {code:'aborted'}]) {
+    assert.equal(expectedOfflineRejection(error,cut),false);
+  }
+});
+
+test('offline cleanup completes normally or fails on a deadline; deadlines are not offline proof',async()=>{
+  let finished=false;await boundedOfflineCleanup(async()=>{finished=true;});assert.equal(finished,true);
+  await assert.rejects(boundedOfflineCleanup(()=>new Promise(()=>{}),10),/cleanup timed out/);
+});
 
 test('offline transport forwards a real RPC path then blocks existing and new connections', {timeout:5000},async()=>{
   let connections=0,transport,client;

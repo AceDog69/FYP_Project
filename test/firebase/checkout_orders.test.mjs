@@ -3,12 +3,12 @@ import { randomBytes } from 'node:crypto';
 import { test, before, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { initializeTestEnvironment, assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
-import { doc, collection, getDoc, getDocFromServer, getDocs, query, where, setDoc, updateDoc, deleteDoc, writeBatch,
+import { doc, collection, getDoc, getDocFromServer, getDocs, getDocsFromServer, query, where, setDoc, updateDoc, deleteDoc, writeBatch,
   serverTimestamp, disableNetwork } from 'firebase/firestore';
 import { account, vendor, draft, prepare, directCheckout, submit, discard, orderRef, requestRef, counterRef, payload, writePayload } from './checkout_helpers.mjs';
 
 import { budgetDiagnostic } from './checkout_budget.mjs';
-import { checkoutTransport } from './checkout_transport.mjs';
+import { checkoutTransport, expectedOfflineRejection, boundedOfflineCleanup } from './checkout_transport.mjs';
 
 const checked=readFileSync(new URL('../../firestore.rules',import.meta.url),'utf8');
 const closed='function checkoutWritesEnabled() { return false; }';
@@ -331,24 +331,41 @@ test('order snapshots survive Vendor menu edits without order writes',async()=>{
 
 test('actual offline checkout cannot report an order or consume a ticket', {timeout:120000},async()=>{
   const {student,q}=await setup(2);const transport=await checkoutTransport();let offline;
+  let onlineVerified=false,transportCut=false,reportedSuccess=false;
   try {
+    const counterBefore=await getDocFromServer(counterRef(student));
+    const requestBefore=await getDocFromServer(requestRef(student,'student',q.submissionId));
     offline=await initializeTestEnvironment({projectId:env.projectId,
       firestore:{host:'127.0.0.1',port:transport.port}});
     const db=offline.authenticatedContext('student',{email:'student@example.com'}).firestore();
     await getDocFromServer(requestRef(db,'student',q.submissionId)); // Prove the transport works first.
     assert.ok(transport.stats.forwardedConnections>0&&transport.stats.forwardedBytes>0,
       'Online control must use this transport, not a direct emulator connection');
+    onlineVerified=true;
     await disableNetwork(db);transport.cut(); // Real loss of RPC connectivity, including transactions.
-    await assert.rejects(submit(db,'student',q.submissionId,'vendor',{maxAttempts:1}),
-      error=>['unavailable','deadline-exceeded'].includes(error.code),
-      'Offline checkout must fail for connectivity, not permission or a read-only no-op');
+    transportCut=true;
+    await assert.rejects(async()=>{
+      await submit(db,'student',q.submissionId,'vendor',{maxAttempts:1});reportedSuccess=true;
+    },error=>expectedOfflineRejection(error,{onlineVerified,transportCut}),
+    'Offline checkout requires unavailability or the exact transport-induced RPC cancellation');
+    assert.equal(reportedSuccess,false);
+    // These use the original, independently connected client, never the cut
+    // client or cached query results. Execute before teardown can cancel calls.
+    const counterAfter=await getDocFromServer(counterRef(student));
+    assert.equal(counterAfter.exists(),counterBefore.exists());
+    assert.deepEqual(counterAfter.data(),counterBefore.data());
+    assert.equal(counterAfter.exists(),false);
+    assert.equal((await getDocsFromServer(query(collection(student,'orders'),where('studentUid','==','student')))).size,0);
+    const requestAfter=await getDocFromServer(requestRef(student,'student',q.submissionId));
+    assert.equal(requestAfter.data().state,'pending');
+    assert.deepEqual(requestAfter.data(),requestBefore.data());
   } finally {
-    // No queued submit may reconnect, even when SDK cleanup itself fails.
-    try {await offline?.cleanup();} finally {await transport.close();}
+    // Close the already-cut listener first; no queued RPC can reconnect. Each
+    // cleanup has a bounded deadline that FAILS the test rather than counting
+    // as an expected offline error. Attempt SDK cleanup even if close fails.
+    try {await boundedOfflineCleanup(()=>transport.close());}
+    finally {await boundedOfflineCleanup(()=>offline?.cleanup());}
   }
-  assert.equal((await getDocFromServer(counterRef(student))).exists(),false);
-  assert.equal((await getDocs(query(collection(student,'orders'),where('studentUid','==','student')))).size,0);
-  assert.equal((await getDocFromServer(requestRef(student,'student',q.submissionId))).data().state,'pending');
 });
 
 test('checked-in gate rejects request/order/counter writes and both Vendor delete gates stay closed',async()=>{

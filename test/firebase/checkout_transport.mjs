@@ -1,5 +1,22 @@
 import { createServer, connect } from 'node:net';
 
+// Test-only classification, after a verified online path has deliberately been
+// cut. grpc-js 1.9.16 maps NGHTTP2_CANCEL to this exact status/message. Do not
+// accept generic cancellation, permission errors or deadlines as offline proof.
+export function expectedOfflineRejection(error,{onlineVerified,transportCut}) {
+  return onlineVerified===true&&transportCut===true&&(error?.code==='unavailable'||
+    (error?.code==='cancelled'&&error.message==='1 CANCELLED: Call cancelled'));
+}
+
+export async function boundedOfflineCleanup(cleanup,timeoutMs=5000) {
+  let timer;
+  try {
+    await Promise.race([Promise.resolve().then(cleanup),new Promise((_,reject)=>{
+      timer=setTimeout(()=>reject(new Error('Offline test cleanup timed out')),timeoutMs);
+    })]);
+  } finally {clearTimeout(timer);}
+}
+
 // A local transport cut, not just disableNetwork(): some JS SDK transaction RPCs
 // bypass the listener network switch. Never reconnect a pending transaction.
 export async function checkoutTransport({upstreamPort=8080}={}) {

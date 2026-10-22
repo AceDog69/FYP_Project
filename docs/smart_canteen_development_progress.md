@@ -718,3 +718,43 @@ Checkout Rules and the real client stay false; both Vendor deletion gates remain
 closed. No main merge, rules deployment, production data/migration, billing change,
 paid service or Stage 3 work is included. Stop after implementation for exact-commit
 local verification; enabling checkout and Stage 3 require successful proof/review.
+
+## Stage 2C — final offline assertion correction, 22 October 2026
+
+Verified base: `1ace379bc02c8bb0d33b3aa131fc99e36d81d9cf` on the existing feature
+branch. User Windows evidence: analyzer PASS; Flutter **67/67**; security **69/70**;
+**zero Rules-budget diagnostics**. One/two-food checkout, over-limit three/four/
+five rejection, same-ID recovery, concurrent sequential tickets and the standalone
+transport test passed. Only the offline integration assertion failed, receiving
+`FirebaseError: 1 CANCELLED: Call cancelled` after the deliberate RPC cut.
+
+Source investigation confirmed locked grpc-js 1.9.16 maps HTTP/2 `NGHTTP2_CANCEL`
+to CANCELLED / `Call cancelled`; Firebase maps the status while preserving the
+message. Current gRPC source also documents Node generating cancellation resets
+on connection drops. The exact observed cancellation is legitimate in this
+controlled test. This finding is not a newly reproduced Cloud Firebase result.
+
+Focused test-only correction accepts code `cancelled` and **exact** message
+`1 CANCELLED: Call cancelled` only after the verified online path and deliberate
+cut, alongside `unavailable`. Generic cancellation, permissions, unknown/arbitrary
+errors, success and deadlines/timeouts are not accepted. All other security cases
+are unchanged. Explicit independent server-only assertions now run before cleanup:
+no successful confirmation, no order, absent/unchanged counter and unchanged
+pending request. Listener close and SDK termination have separate five-second
+bounds; cleanup deadlines fail rather than becoming offline proof. Transport
+never reconnects. Added pure matcher and cleanup unit assertions beside the
+existing real loopback transport test; no application/Rules changes were needed.
+
+Actually executed in Cloud: transport/helper **3/3 passed**, budget diagnostic
+**1/1 passed**, all twelve Firebase `.mjs` syntax checks and Git scope/whitespace
+checks passed. The other 69 security cases and all production source/Rules/config/
+dependency files are byte-preserved. Flutter, Rules compilation, actual Firebase
+offline execution, the full 70-case suite and Android were **not rerun**: SDK,
+Firebase CLI and Node dependencies remain unavailable. No SDK/download retry.
+
+The [handover](stage_2c_checkout_orders.md) records source evidence, exact matcher,
+server assertions, bounds and Windows commands. The final verified GitHub SHA is
+in the delivery report/history; resume there. Local success still requires **70/70
+and zero budget diagnostics** on that exact commit. Both checkout gates and both
+Vendor deletion gates remain closed. No production deployment/data change, main
+merge, scope expansion, paid service or Stage 3 work is included. Stop for review.
