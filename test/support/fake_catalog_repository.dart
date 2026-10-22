@@ -11,25 +11,52 @@ class FakeCatalogRepository extends CatalogRepository {
   final events = StreamController<int>.broadcast();
   bool cached = false, loading = false;
   Object? error;
+  String? errorTarget;
   Completer<void>? pending;
   int reads = 0, _event = 0;
-  Stream<MenuData<T>> _watch<T>(List<T> Function() items) async* {
-    if (!loading) yield MenuData(items(), cached: cached);
-    await for (final _ in events.stream) {
-      if (error != null) throw error!;
+    Stream<MenuData<T>> _watch<T>(
+    String target,
+    List<T> Function() items,
+  ) async* {
+    if (!loading) {
       yield MenuData(items(), cached: cached);
+    }
+
+    await for (final _ in events.stream) {
+      if (error != null && errorTarget == target) {
+        yield* Stream<MenuData<T>>.error(error!);
+      } else {
+        yield MenuData(items(), cached: cached);
+      }
     }
   }
   void emit() => events.add(_event++);
-  @override
-  Stream<MenuData<CatalogStall>> stalls() => _watch(() => List.of(stallItems));
-  @override
-  Stream<MenuData<CatalogStall>> stall(String vendorUid) => _watch(() => stallItems.where((s) => s.id == vendorUid).toList());
-  @override
-  Stream<MenuData<MenuCategory>> categories(String vendorUid) => _watch(() => List.of(categoryItems[vendorUid] ?? []));
-  @override
-  Stream<MenuData<MenuFood>> foods(String vendorUid) => _watch(() =>
-    (foodItems[vendorUid] ?? []).where((f) => f.draft.available).toList());
+@override
+Stream<MenuData<CatalogStall>> stalls() =>
+    _watch('home', () => List.of(stallItems));
+
+@override
+Stream<MenuData<CatalogStall>> stall(String vendorUid) =>
+    _watch(
+      'stall',
+      () => stallItems.where((s) => s.id == vendorUid).toList(),
+    );
+
+@override
+Stream<MenuData<MenuCategory>> categories(String vendorUid) =>
+    _watch(
+      'categories',
+      () => List.of(categoryItems[vendorUid] ?? []),
+    );
+
+@override
+Stream<MenuData<MenuFood>> foods(String vendorUid) =>
+    _watch(
+      'foods',
+      () => (foodItems[vendorUid] ?? [])
+          .where((f) => f.draft.available)
+          .toList(),
+    );
   @override
   Future<CatalogSelection> selection(String vendorUid, String foodId) async {
     reads++;

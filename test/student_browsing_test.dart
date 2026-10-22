@@ -95,14 +95,37 @@ void main() {
     repo.catalogRepository.foodItems['alpha']![0] = food('bowl', available: false, revision: 2);
     repo.catalogRepository.emit(); await tester.pumpAndSettle();
     expect(find.text('No available food items'), findsOneWidget);
-    repo.catalogRepository.error = StateError('offline'); repo.catalogRepository.emit(); await tester.pumpAndSettle();
+    // Simulate an error only in the food stream.
+    repo.catalogRepository.errorTarget = 'foods';
+    repo.catalogRepository.error = StateError('offline');
+    repo.catalogRepository.emit();
+    await tester.pumpAndSettle();
+
     expect(find.text('Unable to load menu. Retry'), findsOneWidget);
-    repo.catalogRepository.error = null; await stage.tap(tester, 'Unable to load menu. Retry');
+
+    // Clear the error before retrying.
+    repo.catalogRepository.error = null;
+    repo.catalogRepository.errorTarget = null;
+
+    await stage.tap(tester, 'Unable to load menu. Retry');
     expect(find.text('No available food items'), findsOneWidget);
-    await tester.pageBack(); await tester.pumpAndSettle();
-    repo.catalogRepository.error = StateError('offline'); repo.catalogRepository.emit(); await tester.pumpAndSettle();
+    // Return to Student Home.
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+
+    // Simulate an error only in the Home stall-list stream.
+    repo.catalogRepository.errorTarget = 'home';
+    repo.catalogRepository.error = StateError('offline');
+    repo.catalogRepository.emit();
+    await tester.pumpAndSettle();
+
     expect(find.text('Retry'), findsOneWidget);
-    repo.catalogRepository.error = null; await stage.tap(tester, 'Retry');
+
+    // Clear the error before retrying.
+    repo.catalogRepository.error = null;
+    repo.catalogRepository.errorTarget = null;
+
+    await stage.tap(tester, 'Retry');
     expect(find.text('Alpha Kitchen'), findsOneWidget);
   });
 
@@ -134,7 +157,11 @@ void main() {
     expect(find.text('Total: RM 9.05'), findsOneWidget); expect(find.text('Updated Bowl'), findsOneWidget);
     repo.catalogRepository.cached = true; repo.catalogRepository.emit(); await tester.pumpAndSettle();
     expect(find.textContaining('Cart needs a current server menu'), findsOneWidget);
-    expect(tester.widget<IconButton>(find.byTooltip('Increase bowl')).onPressed, isNull);
+    final increaseButton = find.ancestor(
+      of: find.byTooltip('Increase bowl'),
+      matching: find.byType(IconButton),
+    );
+    expect(tester.widget<IconButton>(increaseButton).onPressed, isNull);
     repo.catalogRepository.cached = false;
     repo.catalogRepository.stallItems[0] = listing('alpha', open: false);
     repo.catalogRepository.emit(); await tester.pumpAndSettle();

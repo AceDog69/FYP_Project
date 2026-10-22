@@ -155,7 +155,7 @@ class _FoodSelectionState extends State<_FoodSelection> {
             ErrorMessage(_error),
           ])),
         actions: [TextButton(onPressed: _busy ? null : () => Navigator.pop(context), child: const Text('Cancel')),
-          TextButton(onPressed: _busy || !safe ? null : () => _add(food!), child: Text(_busy ? 'Checking…' : 'Add to Cart'))],
+          TextButton(onPressed: _busy || !safe ? null : () => _add(food), child: Text(_busy ? 'Checking…' : 'Add to Cart'))],
       ));
     }));
 }

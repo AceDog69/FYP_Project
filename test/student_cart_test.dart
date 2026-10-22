@@ -66,9 +66,22 @@ void main() {
     expect(cart.warning, contains('Closed'));
     repo.cached = true; repo.emit(); await settleStreams();
     expect(cart.confirmed, false); expect(cart.warning, contains('current server'));
-    repo.cached = false; repo.error = StateError('offline'); repo.emit(); await settleStreams();
+    // Simulate an offline error in the food stream.
+    repo.cached = false;
+    repo.errorTarget = 'foods';
+    repo.error = StateError('offline');
+    repo.emit();
+    await settleStreams();
+
     expect(cart.confirmed, false);
-    repo.error = null; cart.refresh(); await settleStreams(); expect(cart.confirmed, true);
+
+    // Restore the connection and refresh the Cart.
+    repo.error = null;
+    repo.errorTarget = null;
+    cart.refresh();
+    await settleStreams();
+
+    expect(cart.confirmed, true);
     cart.remove('bowl'); expect(cart.lines, isEmpty);
   });
 

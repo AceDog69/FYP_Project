@@ -21,11 +21,34 @@ async function account(uid,role) {
     phoneNumber:'0123456789',role,createdAt:serverTimestamp(),stallSetupComplete:false,stallId:null});
   return db;
 }
-async function vendor(uid='vendor') {
-  const db=await account(uid,'vendor'),b=writeBatch(db);
-  b.set(doc(db,'stalls',uid),{ownerUid:uid,name:'Rice Kitchen',category:'Malay',
-    preparationMinutes:15,status:'open',createdAt:serverTimestamp()});
-  b.update(doc(db,'users',uid),{stallSetupComplete:true,stallId:uid});await b.commit();return db;
+async function vendor(uid = 'vendor') {
+  const db = await account(uid, 'vendor');
+  const b = writeBatch(db);
+
+  // Stage 1 requires every newly created stall to start Closed.
+  b.set(doc(db, 'stalls', uid), {
+    ownerUid: uid,
+    name: 'Rice Kitchen',
+    category: 'Malay',
+    preparationMinutes: 15,
+    status: 'closed',
+    createdAt: serverTimestamp(),
+  });
+
+  b.update(doc(db, 'users', uid), {
+    stallSetupComplete: true,
+    stallId: uid,
+  });
+
+  await b.commit();
+
+  // After setup, the configured Vendor may open the stall.
+  await updateDoc(doc(db, 'stalls', uid), {
+    status: 'open',
+    updatedAt: serverTimestamp(),
+  });
+
+  return db;
 }
 const listing=(uid='vendor',values={})=>({vendorUid:uid,name:'Rice Kitchen',category:'Malay',
   preparationMinutes:15,status:'open',updatedAt:serverTimestamp(),...values});

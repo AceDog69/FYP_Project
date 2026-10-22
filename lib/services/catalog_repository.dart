@@ -106,8 +106,11 @@ class FirebaseCatalogRepository extends CatalogRepository {
       }
       final fields = publicStallFields(uid, source.data()!);
       final previous = listing.data();
-      if (previous != null && previous.length == fields.length + 1 &&
-          fields.entries.every((e) => previous[e.key] == e.value)) return;
+      if (previous != null &&
+          previous.length == fields.length + 1 &&
+          fields.entries.every((e) => previous[e.key] == e.value)) {
+        return;
+      }
       tx.set(target, {...fields, 'updatedAt': FieldValue.serverTimestamp()});
     });
   }
