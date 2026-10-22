@@ -20,6 +20,11 @@ String orderError(Object error) {
   return 'The order could not be confirmed. Keep this checkout and retry, or safely discard the unconfirmed request.';
 }
 
+class _CheckoutObservation {
+  String? state;
+  int? ticket;
+}
+
 class FirebaseOrderRepository extends OrderRepository {
   FirebaseOrderRepository(this.db, this.currentUid);
   final FirebaseFirestore db;
@@ -35,11 +40,48 @@ class FirebaseOrderRepository extends OrderRepository {
   @override
   String newSubmissionId() => db.collection('orders').doc().id;
 
+  // The emulator can authorize a stale optimistic attempt before reporting its
+  // read-version conflict. Never blindly retry permission-denied: require a
+  // server-observed change to this attempt's request state or counter first.
+  Future<T> _transaction<T>(CheckoutRequest request,
+      Future<T> Function(Transaction, _CheckoutObservation) action) async {
+    for (var attempt = 0; attempt < 5; attempt++) {
+      final observed = _CheckoutObservation();
+      try {
+        return await db.runTransaction<T>((tx) {
+          observed.state = null;
+          observed.ticket = null;
+          return action(tx, observed);
+        }, maxAttempts: 8);
+      } on FirebaseException catch (error) {
+        if (error.code != 'permission-denied' || attempt == 4) rethrow;
+        _guard(request);
+        final saved = await _request(request.studentUid, request.id).get(const GetOptions(source: Source.server));
+        _guard(request);
+        final state = saved.exists ? saved.data()?['state'] : 'absent';
+        if (observed.state != null && state != observed.state &&
+            (state == 'confirmed' || state == 'cancelled' || state == 'pending')) {
+          continue;
+        }
+        if (state == 'pending' && observed.ticket != null) {
+          final counter = await db.collection('checkoutCounters').doc(request.vendorUid)
+              .get(const GetOptions(source: Source.server));
+          _guard(request);
+          final ticket = counter.data()?['lastTicket'] ?? 0;
+          if (ticket is int && ticket > observed.ticket!) continue;
+        }
+        rethrow; // A stable-input authorization failure remains a failure.
+      }
+    }
+    throw const AccountException('Checkout contention remains unresolved. Retry the same checkout.');
+  }
+
   @override
   Future<CheckoutRequest> prepare(CheckoutRequest request) async {
     _guard(request); final uid = _uid;
-    await db.runTransaction((tx) async {
+    await _transaction<void>(request, (tx, observed) async {
       final ref = _request(uid, request.id), existing = await tx.get(_request(uid, request.id));
+      observed.state = existing.exists ? existing.data()?['state'] as String? : 'absent';
       _guard(request);
       if (!existing.exists) tx.set(ref, request.createMap());
     });
@@ -51,12 +93,13 @@ class FirebaseOrderRepository extends OrderRepository {
   @override
   Future<OrderReceipt> submit(CheckoutRequest request) async {
     _guard(request); final uid = _uid;
-    await db.runTransaction((tx) async {
+    await _transaction<void>(request, (tx, observed) async {
       final requestRef = _request(uid, request.id);
       final saved = await tx.get(requestRef);
       _guard(request);
       if (!saved.exists) throw const AccountException('Prepare this checkout before confirming.');
       final intent = CheckoutRequest.decode(request.id, saved.data()!);
+      observed.state = intent.state;
       if (intent.state == 'confirmed') return; // Same identity recovers an earlier commit.
       if (intent.state != 'pending') throw const AccountException('This unconfirmed checkout was discarded.');
       final listing = await tx.get(db.collection('publicStalls').doc(intent.vendorUid));
@@ -66,6 +109,7 @@ class FirebaseOrderRepository extends OrderRepository {
       final counterRef = db.collection('checkoutCounters').doc(intent.vendorUid);
       final counter = await tx.get(counterRef);
       final previousTicket = counter.data()?['lastTicket'] ?? 0;
+      if (previousTicket is int) observed.ticket = previousTicket;
       if (counter.exists && (counter.data()?['schemaVersion'] != 1 || counter.data()?['vendorUid'] != intent.vendorUid ||
           counter.data()!.length != 5 || counter.data()?['lastOrderId'] is! String || counter.data()?['updatedAt'] is! Timestamp ||
           previousTicket is! int || previousTicket < 1 || previousTicket >= 2147483647)) {
@@ -125,8 +169,9 @@ class FirebaseOrderRepository extends OrderRepository {
   @override
   Future<OrderReceipt?> discard(CheckoutRequest request) async {
     _guard(request); final uid = _uid;
-    final confirmed = await db.runTransaction<bool>((tx) async {
+    final confirmed = await _transaction<bool>(request, (tx, observed) async {
       final ref = _request(uid, request.id), saved = await tx.get(_request(uid, request.id));
+      observed.state = saved.exists ? saved.data()?['state'] as String? : 'absent';
       _guard(request);
       if (!saved.exists) {
         // A terminal tombstone serializes with an interrupted prepare/submit.

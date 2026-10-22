@@ -1,4 +1,4 @@
-import { doc, collection, getDoc, setDoc, updateDoc, writeBatch, runTransaction, serverTimestamp } from 'firebase/firestore';
+import { doc, collection, getDoc, getDocFromServer, setDoc, updateDoc, writeBatch, runTransaction, serverTimestamp } from 'firebase/firestore';
 
 export const requestRef=(db,uid,id)=>doc(db,'users',uid,'checkoutRequests',id);
 export const orderRef=(db,id)=>doc(db,'orders',id);
@@ -71,18 +71,46 @@ export function writePayload(writer,db,p) {
 export async function directCheckout(db,q,mutate=()=>{}) {
   const p=await payload(db,q);mutate(p);const b=writeBatch(db);writePayload(b,db,p);return b.commit();
 }
-export async function submit(db,uid,id) {
-  await runTransaction(db,async tx=>{
+// SDK retries ABORTED contention itself. A permission error is retried only when
+// independent server reads prove the request/counter changed since that attempt.
+// Direct adversarial writes deliberately do NOT use this recovery helper.
+export async function checkoutTransaction(db,uid,id,vendorUid,action,{maxAttempts=8}={}) {
+  for(let attempt=0;attempt<5;attempt++) {
+    const observed={};
+    try {
+      return await runTransaction(db,tx=>{
+        observed.state=undefined;observed.ticket=undefined;
+        return action(tx,observed);
+      },{maxAttempts});
+    } catch(error) {
+      if(error.code!=='permission-denied'||attempt===4) throw error;
+      const saved=await getDocFromServer(requestRef(db,uid,id));
+      const state=saved.exists()?saved.data().state:'absent';
+      if(observed.state!==undefined&&state!==observed.state&&['confirmed','cancelled','pending'].includes(state)) continue;
+      if(state==='pending'&&observed.ticket!==undefined) {
+        const current=(await getDocFromServer(counterRef(db,vendorUid))).data()?.lastTicket??0;
+        if(Number.isInteger(current)&&current>observed.ticket) continue;
+      }
+      throw error;
+    }
+  }
+  throw new Error('Checkout contention remains unresolved');
+}
+export async function submit(db,uid,id,vendorUid='vendor',options={}) {
+  await checkoutTransaction(db,uid,id,vendorUid,async(tx,observed)=>{
     const record=await tx.get(requestRef(db,uid,id));const q=record.data();
+    observed.state=q?.state??'absent';
     if(q?.state==='confirmed') return;
     if(q?.state!=='pending') throw new Error('Request is cancelled or absent');
-    const p=await payload(db,q,ref=>tx.get(ref));writePayload(tx,db,p);
-  });
-  return (await getDoc(orderRef(db,id))).data();
+    const p=await payload(db,q,ref=>tx.get(ref));observed.ticket=p.counter.lastTicket-1;
+    writePayload(tx,db,p);
+  },options);
+  return (await getDocFromServer(orderRef(db,id))).data();
 }
 export function discard(db,q) {
-  return runTransaction(db,async tx=>{
+  return checkoutTransaction(db,q.studentUid,q.submissionId,q.vendorUid,async(tx,observed)=>{
     const ref=requestRef(db,q.studentUid,q.submissionId),saved=await tx.get(ref);
+    observed.state=saved.data()?.state??'absent';
     if(!saved.exists()) {tx.set(ref,{...q,state:'cancelled'});return 'cancelled';}
     if(saved.data().state==='confirmed') return 'confirmed';
     if(saved.data().state==='pending') tx.update(ref,{state:'cancelled',updatedAt:serverTimestamp()});

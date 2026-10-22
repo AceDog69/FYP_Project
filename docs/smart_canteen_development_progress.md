@@ -575,3 +575,25 @@ Final verified GitHub SHA is reported in final chat/history. Resume there, never
 rebuild. No main merge, production rules/data change, migration or paid service.
 Stage 3 requires successful proof, review, a separate gate-enabling change and
 complete checkout/Student/Vendor Android acceptance first.
+
+## Stage 2C focused security repair — core checkpoint
+
+Remote starting HEAD verified as `001555044cabb2ffad3f1e0c0b72961ede40e7c4`.
+User-reported Windows results for that version: analyzer clean, Flutter 63/63;
+checkout command 65 total, 58 passed, 7 failed. Failures include 3/4-product
+expression exhaustion, malformed-batch budget errors, same-ID and multi-Student
+contention, race cleanup lock timeout and an invalid offline rejection assertion.
+These results supersede the earlier unexecuted-proof status for that version;
+they do not establish the security of this repair.
+
+Core repair preserves the schema, four products and every canonical source check.
+Exact map equality/diff replace repeated field comparisons; child/request helpers
+bind after-state maps once. Draft bounds are established at preparation and stay
+immutable. Canonical food/category/membership are still checked at confirmation.
+Integer snapshot/total checks remain explicit. No rules limit is claimed measured.
+Client and test helper use bounded SDK retries, plus permission-error recovery
+ONLY after server reads demonstrate changed request state or an advanced counter.
+Stable-input permission failures propagate; same submission ID is always retained.
+Checkout Rules and real `canCheckout` remain false; both Vendor deletion gates
+remain closed. Emulator tests, isolation/offline repairs and final documentation
+are pending at this intermediate checkpoint. No feature batch, migration or deploy.

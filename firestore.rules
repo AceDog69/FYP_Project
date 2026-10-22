@@ -103,29 +103,32 @@ service cloud.firestore {
           + (d.items.size() > 3 ? draftSubtotal(d.items[3]) : 0);
     }
     function matchesDraft(i, expected) {
-      return i.foodId == expected.foodId && i.name == expected.name && i.description == expected.description
-        && i.categoryId == expected.categoryId && i.pictureId == expected.pictureId
-        && i.priceSen == expected.priceSen && i.quantity == expected.quantity && i.foodRevision == expected.foodRevision
-        && i.subtotalSen == expected.priceSen * expected.quantity;
+      // The durable draft has exactly eight validated, immutable fields. Only
+      // these two additions may differ: removals/extra fields also appear in diff.
+      return i.diff(expected).affectedKeys().hasOnly(['categoryName','subtotalSen'])
+        && i.subtotalSen == draftSubtotal(expected);
     }
     function validOrderItem(i, expected, vendorUid) {
       let food = get(foodPath(vendorUid, i.foodId)).data;
       let category = get(categoryPath(vendorUid, i.categoryId)).data;
       let membership = get(membershipPath(vendorUid, i.foodId)).data;
-      return i.keys().hasAll(['foodId','name','description','categoryId','categoryName','pictureId','priceSen','quantity','subtotalSen','foodRevision'])
-        && i.keys().hasOnly(['foodId','name','description','categoryId','categoryName','pictureId','priceSen','quantity','subtotalSen','foodRevision'])
-        && matchesDraft(i, expected) && i.quantity is int && i.quantity >= 1 && i.quantity <= 20
-        && food.vendorUid == vendorUid && food.available == true && i.foodRevision == food.revision
-        && i.name == food.name && i.description == food.description && i.pictureId == food.pictureId
-        && i.categoryId == food.categoryId && i.priceSen == food.priceSen
-        && i.priceSen is int && i.priceSen >= 1 && i.priceSen <= 100000
+      return matchesDraft(i, expected)
+        && i.priceSen is int && i.quantity is int && i.subtotalSen is int && i.foodRevision is int
+        // Exact map equality verifies the whole snapshot, including its shape,
+        // against canonical data. No client-selected snapshot becomes authority.
+        && i == {'foodId':expected.foodId, 'name':food.name, 'description':food.description,
+          'categoryId':food.categoryId, 'categoryName':category.name, 'pictureId':food.pictureId,
+          'priceSen':food.priceSen, 'quantity':expected.quantity,
+          'subtotalSen':food.priceSen * expected.quantity, 'foodRevision':food.revision}
+        && food.vendorUid == vendorUid && food.available == true
+        // Quantity/price/type/picture bounds are already enforced on the
+        // immutable prepared draft; equality above preserves every one of them.
         && category.vendorUid == vendorUid && i.categoryName == category.name
         && category.name is string && category.name.size() >= 1 && category.name.size() <= 50
         && category.revision is int && category.revision >= 1
         && category.createdAt is timestamp && category.updatedAt is timestamp
         && category.nameKey == category.name.lower()
-        && membership.keys().hasOnly(['vendorUid','categoryId'])
-        && membership.vendorUid == vendorUid && membership.categoryId == i.categoryId;
+        && membership == {'vendorUid':vendorUid, 'categoryId':i.categoryId};
     }
     function validOrder(d, id) {
       let intent = getAfter(requestPath(request.auth.uid, id)).data;
@@ -134,35 +137,45 @@ service cloud.firestore {
       let second = d.itemCount > 1 ? getAfter(orderItemPath(id, '1')).data : null;
       let third = d.itemCount > 2 ? getAfter(orderItemPath(id, '2')).data : null;
       let fourth = d.itemCount > 3 ? getAfter(orderItemPath(id, '3')).data : null;
-      return d.keys().hasAll(['schemaVersion','orderId','submissionId','studentUid','vendorUid','stallName','preparationMinutes','ticket','itemCount','totalSen','status','paymentMethod','paymentStatus','createdAt','firstItem'])
-        && d.keys().hasOnly(['schemaVersion','orderId','submissionId','studentUid','vendorUid','stallName','preparationMinutes','ticket','itemCount','totalSen','status','paymentMethod','paymentStatus','createdAt','firstItem'])
-        && d.schemaVersion == 1 && d.orderId == id && d.submissionId == id && d.studentUid == request.auth.uid
+      return d == {'schemaVersion':1, 'orderId':id, 'submissionId':id, 'studentUid':request.auth.uid,
+          'vendorUid':intent.vendorUid, 'stallName':stall.name, 'preparationMinutes':stall.preparationMinutes,
+          'ticket':counter.lastTicket, 'itemCount':intent.items.size(), 'totalSen':intent.totalSen,
+          'status':'Pending', 'paymentMethod':intent.paymentMethod, 'paymentStatus':'simulated',
+          'createdAt':request.time, 'firstItem':d.firstItem}
         && intent.state == 'confirmed' && intent.submissionId == id && intent.studentUid == request.auth.uid
-        && d.vendorUid == intent.vendorUid && d.stallName == intent.stallName && d.stallName == stall.name
+        && d.stallName == intent.stallName
         && stall.ownerUid == d.vendorUid && stall.status == 'open'
         && d.preparationMinutes == stall.preparationMinutes
         && d.preparationMinutes is int && d.preparationMinutes >= 1 && d.preparationMinutes <= 180
-        && d.paymentStatus == 'simulated' && d.paymentMethod == intent.paymentMethod
-        && d.status == 'Pending' && d.createdAt == request.time
-        && d.itemCount is int && d.itemCount >= 1 && d.itemCount <= 4 && d.itemCount == intent.items.size()
-        && d.ticket is int && d.ticket >= 1 && d.ticket == counter.lastTicket
+        // Count/total/payment bounds originate in the immutable prepared draft.
+        && d.itemCount is int && d.totalSen is int && d.ticket is int && d.ticket >= 1
         && counter.vendorUid == d.vendorUid && counter.lastOrderId == id
         && validOrderItem(d.firstItem, intent.items[0], d.vendorUid)
         && (d.itemCount < 2 || matchesDraft(second, intent.items[1]))
         && (d.itemCount < 3 || matchesDraft(third, intent.items[2]))
         && (d.itemCount < 4 || matchesDraft(fourth, intent.items[3]))
-        && d.totalSen is int && d.totalSen == intent.totalSen && d.totalSen == d.firstItem.subtotalSen
+        && d.totalSen == d.firstItem.subtotalSen
           + (d.itemCount > 1 ? second.subtotalSen : 0) + (d.itemCount > 2 ? third.subtotalSen : 0)
           + (d.itemCount > 3 ? fourth.subtotalSen : 0);
     }
     function validCounter(d, uid) {
       let order = getAfter(orderPath(d.lastOrderId)).data;
-      return d.keys().hasAll(['schemaVersion','vendorUid','lastTicket','lastOrderId','updatedAt'])
-        && d.keys().hasOnly(['schemaVersion','vendorUid','lastTicket','lastOrderId','updatedAt'])
-        && d.schemaVersion == 1 && d.vendorUid == uid && d.lastTicket is int && d.lastTicket >= 1 && d.lastTicket <= 2147483647
+      return d == {'schemaVersion':1, 'vendorUid':uid, 'lastTicket':order.ticket,
+          'lastOrderId':order.orderId, 'updatedAt':request.time}
+        && d.lastTicket is int && d.lastTicket >= 1 && d.lastTicket <= 2147483647
         && d.lastOrderId is string && d.lastOrderId.matches('^[A-Za-z0-9]{20}$')
-        && d.updatedAt == request.time && order.studentUid == request.auth.uid && order.vendorUid == uid
-        && order.orderId == d.lastOrderId && order.ticket == d.lastTicket && order.status == 'Pending';
+        && order.studentUid == request.auth.uid && order.vendorUid == uid && order.status == 'Pending';
+    }
+    function confirmsRequest(uid, id, vendorUid) {
+      let order = getAfter(orderPath(id)).data;
+      return order.studentUid == uid && order.vendorUid == vendorUid && order.submissionId == id;
+    }
+    function validOrderChild(d, id, index) {
+      let order = getAfter(orderPath(id)).data;
+      let intent = getAfter(requestPath(request.auth.uid, id)).data;
+      let slot = index == '1' ? 1 : (index == '2' ? 2 : 3);
+      return order.studentUid == request.auth.uid && order.createdAt == request.time
+        && slot < order.itemCount && validOrderItem(d, intent.items[slot], order.vendorUid);
     }
     function orderReader(d) {
       return signedIn() && ((d.studentUid == request.auth.uid && student())
@@ -274,9 +287,7 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['state','updatedAt'])
         && request.resource.data.updatedAt == request.time
         && ((request.resource.data.state == 'confirmed'
-            && getAfter(orderPath(submissionId)).data.studentUid == studentUid
-            && getAfter(orderPath(submissionId)).data.vendorUid == resource.data.vendorUid
-            && getAfter(orderPath(submissionId)).data.submissionId == submissionId)
+            && confirmsRequest(studentUid, submissionId, resource.data.vendorUid))
           || (request.resource.data.state == 'cancelled'
             && (!existsAfter(orderPath(submissionId)) || getAfter(orderPath(submissionId)).data.studentUid != studentUid)));
       allow delete: if false;
@@ -300,14 +311,7 @@ service cloud.firestore {
       match /items/{index} {
         allow read: if orderReader(get(orderPath(orderId)).data);
         allow create: if checkoutWritesEnabled() && signedIn() && index in ['1','2','3']
-          && getAfter(orderPath(orderId)).data.studentUid == request.auth.uid
-          && getAfter(orderPath(orderId)).data.createdAt == request.time
-          && ((index == '1' && getAfter(orderPath(orderId)).data.itemCount >= 2
-              && validOrderItem(request.resource.data, getAfter(requestPath(request.auth.uid, orderId)).data.items[1], getAfter(orderPath(orderId)).data.vendorUid))
-            || (index == '2' && getAfter(orderPath(orderId)).data.itemCount >= 3
-              && validOrderItem(request.resource.data, getAfter(requestPath(request.auth.uid, orderId)).data.items[2], getAfter(orderPath(orderId)).data.vendorUid))
-            || (index == '3' && getAfter(orderPath(orderId)).data.itemCount == 4
-              && validOrderItem(request.resource.data, getAfter(requestPath(request.auth.uid, orderId)).data.items[3], getAfter(orderPath(orderId)).data.vendorUid)));
+          && validOrderChild(request.resource.data, orderId, index);
         allow update, delete: if false;
       }
     }
