@@ -7,6 +7,7 @@ import '../widgets/auth_widgets.dart';
 import 'vendor_dashboard.dart';
 import 'vendor_profile.dart';
 import 'vendor_menu_screen.dart';
+import 'student_home.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({
@@ -114,6 +115,10 @@ class _HomeScreenState extends State<HomeScreen> {
           ? VendorProfile(profile: widget.profile, repository: widget.repository)
           : _index == _labels.length - 1
           ? _profile()
+          : !_vendor && _index == 0
+          ? StudentHome(repository: widget.repository.catalogRepository,
+              onStall: (stall) => ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('${stall.stall.name} menu is being prepared.'))))
           : Center(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.all(24),

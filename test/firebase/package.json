@@ -12,6 +12,7 @@
     "test": "firebase emulators:exec --project demo-smart-canteen --only auth,firestore --config ../../firebase.json \"node --test stage_one.test.mjs\"",
     "test:dart": "firebase emulators:exec --project demo-smart-canteen --only auth,firestore --config ../../firebase.json \"node run_dart_tests.mjs\"",
     "test:vendor": "firebase emulators:exec --project demo-smart-canteen --only auth,firestore --config ../../firebase.json \"node --test --test-concurrency=1 stage_one.test.mjs vendor_operations.test.mjs\"",
-    "test:menu": "firebase emulators:exec --project demo-smart-canteen --only auth,firestore --config ../../firebase.json \"node --test --test-concurrency=1 stage_one.test.mjs vendor_operations.test.mjs vendor_menu.test.mjs\""
+    "test:menu": "firebase emulators:exec --project demo-smart-canteen --only auth,firestore --config ../../firebase.json \"node --test --test-concurrency=1 stage_one.test.mjs vendor_operations.test.mjs vendor_menu.test.mjs\"",
+    "test:student": "firebase emulators:exec --project demo-smart-canteen --only auth,firestore --config ../../firebase.json \"node --test --test-concurrency=1 stage_one.test.mjs vendor_operations.test.mjs vendor_menu.test.mjs student_catalog.test.mjs\""
   }
 }

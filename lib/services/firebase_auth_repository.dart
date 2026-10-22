@@ -5,6 +5,7 @@ import '../models/user_profile.dart';
 import '../models/vendor_stall.dart';
 import 'auth_repository.dart';
 import 'vendor_menu_repository.dart';
+import 'catalog_repository.dart';
 
 class FirebaseAuthRepository extends AuthRepository {
   FirebaseAuthRepository(this.auth, this.db) {
@@ -16,6 +17,8 @@ class FirebaseAuthRepository extends AuthRepository {
   final FirebaseFirestore db;
   @override
   late final VendorMenuRepository menuRepository = FirebaseVendorMenuRepository(db, () => uid);
+  @override
+  late final FirebaseCatalogRepository catalogRepository = FirebaseCatalogRepository(db, () => uid);
   late final StreamSubscription<User?> _subscription;
   User? _user;
   bool _ready = false, _registering = false;
@@ -82,7 +85,8 @@ class FirebaseAuthRepository extends AuthRepository {
       throw const AccountException('Please sign in again.');
     }
     // The authenticated UID selects exactly one document. Existing Stage 1
-    // rules authorize this owner read; no collection query or write is used.
+    // rules authorize this owner read. Public listing publication selects only
+    // public fields and never exposes this private source document to Students.
     await for (final doc in db.collection('stalls').doc(vendorUid)
         .snapshots(includeMetadataChanges: true)) {
       if (uid != vendorUid) {
@@ -98,6 +102,15 @@ class FirebaseAuthRepository extends AuthRepository {
         doc.data()!,
         isCached: doc.metadata.isFromCache,
       );
+      if (!doc.metadata.isFromCache) {
+        try {
+          await catalogRepository.publishOwnStall();
+        } catch (_) {
+          // Preserve existing Dashboard reads if new rules are not installed or
+          // the connection drops. Retry publication on the next server snapshot
+          // or Dashboard visit; status/settings saves also publish atomically.
+        }
+      }
     }
   }
 
@@ -122,6 +135,10 @@ class FirebaseAuthRepository extends AuthRepository {
         }
         VendorStall.fromMap(vendorUid, stall.data()!);
         tx.update(stallRef, {...changes, 'updatedAt': FieldValue.serverTimestamp()});
+        tx.set(db.collection('publicStalls').doc(vendorUid), {
+          ...publicStallFields(vendorUid, {...stall.data()!, ...changes}),
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
       });
     } finally {
       _stallWritePending = false;

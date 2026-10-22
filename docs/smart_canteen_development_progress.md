@@ -2,8 +2,8 @@
 
 Updated 22 October 2026 (Asia/Singapore). Supervisor meeting: 28 October 2026.
 
-**Latest state:** the finalization section at the end supersedes the historical
-checkpoint limitations/results below. Both destructive actions remain gated.
+**Latest state:** the Stage 2B section at the end supersedes historical checkpoint
+limitations/results below. Both Vendor destructive actions remain gated.
 
 ## Milestones and source
 
@@ -431,3 +431,36 @@ deletion needs its own proven design. Preserve the verified remote backup and
 resume from its exact SHA (reported in final chat / branch history). Do not
 restart from Stage 1. Stage 2B browsing, Stage 2C Cart/checkout/immutable order
 snapshots and Stage 3 queue/FCFS/ETA/notifications remain pending; none are started.
+
+## Stage 2B — Student browsing and unpaid Cart
+
+Required base verified through connected GitHub before edits:
+`ba7edcf7661c62f7771ecae37b3cf57a17355bd0` on the existing Stage 2A-03 branch.
+New branch: `feature/stage-2b-student-browsing-cart`, created from that exact commit.
+User reports acceptance at that base: analyzer no issues, 38/38 Flutter tests,
+38/38 combined menu security tests, previous core Vendor Menu Pixel 6 acceptance
+and clean Windows working tree. These are user-reported results, not Codex reruns.
+
+Intermediate checkpoint: Student Home real-time listings, stall-name-only search,
+fixed category chips, loading/error/Retry/cache/empty states; minimal owner-published
+`publicStalls/{vendorUid}`; existing raw stall/profile/membership/name privacy;
+Student categories and `available == true` food queries against the original menu
+schema. Owner status/settings transactions publish matching public fields atomically;
+once published, rules reject stale standalone source changes. Existing stalls are
+published idempotently when the owning Vendor views a server-confirmed Dashboard,
+or saves status/settings. No bulk migration or Student backfill rights. Vendors who
+have not returned to the app do not automatically appear. Publication failures
+preserve Dashboard reads and retry on a subsequent server snapshot/visit.
+
+Only public name/category/status/preparation/picture/vendor ID/update timestamp are
+copied, never arbitrary legacy fields or user contact details. Student reads of
+raw `stalls` remain denied. No new Student writes or menu duplication. Both delete
+gates remain false. Eight new runnable catalog security scenarios are added;
+`npm run test:student` includes all earlier rule suites. SDK remains absent and
+proxy port 8080 is unreachable; Firebase CLI is absent. No runtime pass is claimed.
+
+Student S2-01/02/03 PNGs are not in supplied ZIPs; the approved written handover was
+inspected and is used. Missing visual references are not claimed reviewed.
+
+At this intermediate checkpoint Stall Menu and Cart implementation/tests are
+**pending**. The checkpoint must be remotely verified before continuing them.
