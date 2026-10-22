@@ -24,7 +24,7 @@ UserProfile profile(AccountRole role, {bool setup = false}) => UserProfile(
 // against local emulators, never against the production project.
 class TestRepository extends AuthRepository {
   @override
-  final menuRepository = FakeMenuRepository();
+  final FakeMenuRepository menuRepository = FakeMenuRepository();
   bool ready = true;
   String? currentUid;
   UserProfile? currentProfile, nextProfile;
