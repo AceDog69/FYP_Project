@@ -3,10 +3,17 @@ import '../constants/checkout_limits.dart';
 import '../models/confirmed_order.dart';
 import '../models/vendor_menu.dart';
 import 'auth_repository.dart';
+import '../models/vendor_queue.dart';
+import 'vendor_order_processing.dart';
 
 abstract class OrderRepository {
   // Requires executed Rules proof and review before enabling the real client.
   bool get canCheckout => false;
+  // Candidate operations are enabled only by the isolated debug demo entry.
+  bool get canProcessOrders => false;
+  Stream<VendorQueue> queue() => Stream.value(const VendorQueue.initial());
+  Future<void> advance(ConfirmedOrder order) => Future.error(
+    const AccountException('Order processing is available only in the local emulator demo.'));
   String newSubmissionId();
   Future<CheckoutRequest> prepare(CheckoutRequest request);
   Future<OrderReceipt> submit(CheckoutRequest request);
@@ -41,6 +48,11 @@ class FirebaseOrderRepository extends OrderRepository {
       throw const AccountException('Checkout supports one or two distinct foods.');
     }
   }
+  late final _processing = VendorOrderProcessing(db, currentUid, () => canProcessOrders);
+  @override
+  Stream<VendorQueue> queue() => _processing.watch();
+  @override
+  Future<void> advance(ConfirmedOrder order) => _processing.advance(order);
   @override
   String newSubmissionId() => db.collection('orders').doc().id;
 

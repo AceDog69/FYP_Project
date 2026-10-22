@@ -74,21 +74,26 @@ class CheckoutRequest {
   }
 }
 
+const orderStatuses = ['Pending', 'Preparing', 'Ready', 'Completed'];
+
 class ConfirmedOrder {
   ConfirmedOrder({required this.id, required this.studentUid, required this.vendorUid,
     required this.stallName, required this.ticket, required this.totalSen, required this.itemCount,
     required this.preparationMinutes, required this.paymentMethod, required this.createdAt,
-    required this.firstItem, this.status = 'Pending'}) {
+    required this.firstItem, this.status = 'Pending', this.statusRevision = 0,
+    this.statusUpdatedAt, this.preparingAt, this.readyAt, this.completedAt}) {
     if (itemCount < 1 || itemCount > maxCheckoutProducts) {
       throw const FormatException('Invalid confirmed order size.');
     }
   }
   final String id, studentUid, vendorUid, stallName, paymentMethod, status;
-  final int ticket, totalSen, itemCount, preparationMinutes;
+  final int ticket, totalSen, itemCount, preparationMinutes, statusRevision;
+  final Timestamp? statusUpdatedAt, preparingAt, readyAt, completedAt;
+  String? get nextStatus => status == 'Completed' ? null : orderStatuses[orderStatuses.indexOf(status) + 1];
   final Timestamp createdAt;
   final OrderItem firstItem;
   factory ConfirmedOrder.decode(String id, Map<String, dynamic> d) {
-    if (d['schemaVersion'] != 1 || d['orderId'] != id || d['submissionId'] != id || d['status'] != 'Pending' ||
+    if (d['schemaVersion'] != 1 || d['orderId'] != id || d['submissionId'] != id || !orderStatuses.contains(d['status']) ||
         d['paymentStatus'] != 'simulated' || d['ticket'] is! int || d['ticket'] < 1 ||
         d['itemCount'] is! int || d['itemCount'] < 1 || d['itemCount'] > maxCheckoutProducts ||
         d['totalSen'] is! int || d['totalSen'] < 1 || d['preparationMinutes'] is! int ||
@@ -98,9 +103,17 @@ class ConfirmedOrder {
         !simulatedPaymentMethods.containsKey(d['paymentMethod'])) {
           throw const FormatException('Invalid confirmed order.');
         }
+    final revision = orderStatuses.indexOf(d['status'] as String);
+    if ((d['statusRevision'] ?? 0) != revision ||
+        (revision > 0 && (d['statusUpdatedAt'] is! Timestamp || d['preparingAt'] is! Timestamp)) ||
+        (revision > 1 && d['readyAt'] is! Timestamp) || (revision > 2 && d['completedAt'] is! Timestamp)) {
+      throw const FormatException('Invalid order progress.');
+    }
     return ConfirmedOrder(id: id, studentUid: d['studentUid'], vendorUid: d['vendorUid'], stallName: d['stallName'],
       ticket: d['ticket'], totalSen: d['totalSen'], itemCount: d['itemCount'], preparationMinutes: d['preparationMinutes'],
       paymentMethod: d['paymentMethod'], createdAt: d['createdAt'],
+      status: d['status'], statusRevision: revision, statusUpdatedAt: d['statusUpdatedAt'],
+      preparingAt: d['preparingAt'], readyAt: d['readyAt'], completedAt: d['completedAt'],
       firstItem: OrderItem.decode(Map<String, dynamic>.from(d['firstItem'] as Map), snapshot: true));
   }
 }

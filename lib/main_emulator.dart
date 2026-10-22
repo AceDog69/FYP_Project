@@ -55,6 +55,9 @@ class _DemoCheckoutRepository extends FirebaseOrderRepository {
   final bool flagEnabled, emulatorsConnected;
 
   @override
+  bool get canProcessOrders => canCheckout;
+
+  @override
   bool get canCheckout => emulatorCheckoutAllowed(
     debugMode: kDebugMode,
     emulatorEntryPoint: true,

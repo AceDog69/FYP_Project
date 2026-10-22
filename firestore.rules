@@ -67,6 +67,69 @@ service cloud.firestore {
     // Closed until the bounded checkout proof is executed and reviewed.
     function checkoutWritesEnabled() { return false; }
     function orderPath(id) { return /databases/$(database)/documents/orders/$(id); }
+    // The only preparation slot and the next never-started ticket. Tickets are
+    // allocated contiguously by the unchanged Stage 2C checkout protocol.
+    function queuePath(uid) { return /databases/$(database)/documents/vendorQueues/$(uid); }
+    function queueBefore(uid) {
+      return exists(queuePath(uid)) ? get(queuePath(uid)).data
+        : {'nextTicket': 1, 'preparingOrderId': null, 'revision': 0};
+    }
+    function validQueue(d, uid) {
+      return d.keys().hasAll(['schemaVersion','vendorUid','nextTicket','preparingOrderId','revision','updatedAt'])
+        && d.keys().hasOnly(['schemaVersion','vendorUid','nextTicket','preparingOrderId','revision','updatedAt'])
+        && d.schemaVersion == 1 && d.vendorUid == uid
+        && d.nextTicket is int && d.nextTicket >= 2 && d.nextTicket <= 2147483648
+        && d.revision is int && d.revision >= 1 && d.updatedAt == request.time
+        && (d.preparingOrderId == null
+          || (d.preparingOrderId is string && d.preparingOrderId.matches('^[A-Za-z0-9]{20}$')));
+    }
+    function queueClaim(uid, id, ticket) {
+      let before = queueBefore(uid);
+      let after = getAfter(queuePath(uid)).data;
+      return before.preparingOrderId == null && before.nextTicket == ticket
+        && validQueue(after, uid) && after.preparingOrderId == id
+        && after.nextTicket == before.nextTicket + 1 && after.revision == before.revision + 1;
+    }
+    function queueRelease(uid, id) {
+      let before = get(queuePath(uid)).data;
+      let after = getAfter(queuePath(uid)).data;
+      return before.preparingOrderId == id && validQueue(after, uid)
+        && after.preparingOrderId == null && after.nextTicket == before.nextTicket
+        && after.revision == before.revision + 1;
+    }
+    // Reciprocal link: a cursor write cannot be made without the corresponding
+    // real order transition in the SAME atomic commit (get vs getAfter).
+    function pairedQueueOrder(uid, id, from, to) {
+      let before = get(orderPath(id)).data;
+      let after = getAfter(orderPath(id)).data;
+      return before.vendorUid == uid && before.status == from && after.status == to;
+    }
+    function validQueueWrite(d, uid) {
+      let before = queueBefore(uid);
+      return validQueue(d, uid) && (before.preparingOrderId == null
+        ? (d.preparingOrderId is string && queueClaim(uid, d.preparingOrderId, before.nextTicket)
+          && get(orderPath(d.preparingOrderId)).data.ticket == before.nextTicket
+          && pairedQueueOrder(uid, d.preparingOrderId, 'Pending', 'Preparing'))
+        : (queueRelease(uid, before.preparingOrderId)
+          && pairedQueueOrder(uid, before.preparingOrderId, 'Preparing', 'Ready')));
+    }
+    function validOrderProgress(d, before, id) {
+      return d.diff(before).affectedKeys().hasOnly([
+          'status','statusRevision','statusUpdatedAt','preparingAt','readyAt','completedAt'])
+        && d.statusUpdatedAt == request.time && d.statusRevision is int
+        && ((before.status == 'Pending' && before.get('statusRevision', 0) == 0
+            && d.status == 'Preparing' && d.statusRevision == 1
+            && d.preparingAt == request.time && !('readyAt' in d) && !('completedAt' in d)
+            && queueClaim(before.vendorUid, id, before.ticket))
+          || (before.status == 'Preparing' && before.statusRevision == 1
+            && d.status == 'Ready' && d.statusRevision == 2
+            && d.preparingAt == before.preparingAt && d.readyAt == request.time && !('completedAt' in d)
+            && queueRelease(before.vendorUid, id))
+          || (before.status == 'Ready' && before.statusRevision == 2
+            && d.status == 'Completed' && d.statusRevision == 3
+            && d.preparingAt == before.preparingAt && d.readyAt == before.readyAt
+            && d.completedAt == request.time));
+    }
     function orderItemPath(id, index) { return /databases/$(database)/documents/orders/$(id)/items/$(index); }
     function requestPath(uid, id) { return /databases/$(database)/documents/users/$(uid)/checkoutRequests/$(id); }
     function counterPath(uid) { return /databases/$(database)/documents/checkoutCounters/$(uid); }
@@ -296,10 +359,17 @@ service cloud.firestore {
         && request.resource.data.lastTicket == resource.data.lastTicket + 1;
       allow delete: if false;
     }
+    match /vendorQueues/{vendorUid} {
+      allow get: if configuredVendor(vendorUid);
+      allow list, delete: if false;
+      allow create, update: if configuredVendor(vendorUid) && validQueueWrite(request.resource.data, vendorUid);
+    }
     match /orders/{orderId} {
       allow read: if orderReader(resource.data);
       allow create: if checkoutWritesEnabled() && student() && validOrder(request.resource.data, orderId);
-      allow update, delete: if false;
+      allow update: if configuredVendor(resource.data.vendorUid)
+        && validOrderProgress(request.resource.data, resource.data, orderId);
+      allow delete: if false;
       match /items/{index} {
         allow read: if orderReader(get(orderPath(orderId)).data);
         allow create: if checkoutWritesEnabled() && signedIn() && index == '1'

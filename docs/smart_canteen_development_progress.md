@@ -810,3 +810,26 @@ tests reuse its ports. Latest verified final SHA is in the delivery report/histo
 resume from that branch commit. Production checkout and both deletion gates remain
 closed. No merge, deploy, paid service, Windows permission/policy change,
 production data access or Stage 3 implementation is included. Stop for review.
+
+## Stage 3A — Vendor FCFS candidate checkpoint (22 October 2026)
+
+Supersedes the earlier “Stage 3 not started” status. Verified base:
+`9da8298418eaeedbae002903504a6f5a84f59407`; new branch
+`feature/stage-3a-vendor-fcfs`. User-reported Windows acceptance of that BASE:
+Flutter analyze clean, Flutter 70/70, Firebase 70/70, zero Rules-budget diagnostics,
+and Pixel 6 Student Ticket #1/#2 confirmed and received by Vendor. Those results
+are not candidate validation.
+
+Candidate adds a protected per-stall next-ticket/single-preparation-slot cursor,
+paired Rules enforcement, immutable transition timestamps/revisions, Vendor
+status actions and readable status badges, real-time Student status decoding and
+live details. Checkout transaction, two-food/quantity bounds, existing demo
+launcher and all production/deletion gates are preserved. Processing is enabled
+only by the isolated flagged debug emulator repository.
+
+See [Stage 3A architecture and verification](stage_3a_vendor_fcfs.md) for the FCFS
+inductive invariant, schema, limitations and test status. New adversarial/race
+Rules tests are written but not emulator-executed. Flutter/Dart and Firebase CLI
+are unavailable in Cloud. Focused Flutter tests and final checks/documentation
+are pending at this intermediate checkpoint. Stage 3B Student Queue/ETA and 3C
+notifications remain unstarted; no Firebase rules have been deployed.
