@@ -47,6 +47,7 @@ class _StudentHomeState extends State<StudentHome> {
         SingleChildScrollView(scrollDirection: Axis.horizontal, child: Row(children: [
           for (final category in ['All', ...stallCategories]) Padding(padding: const EdgeInsets.only(right: 8),
             child: ChoiceChip(label: Text(category), selected: category == _category,
+              showCheckmark: false,
               onSelected: (_) => setState(() => _category = category))),
         ])),
         const SizedBox(height: 16),

@@ -8,6 +8,9 @@ import 'vendor_dashboard.dart';
 import 'vendor_profile.dart';
 import 'vendor_menu_screen.dart';
 import 'student_home.dart';
+import 'student_stall_menu.dart';
+import 'student_cart_screen.dart';
+import '../services/student_cart.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({
@@ -22,10 +25,13 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  late final _cart = StudentCart(widget.profile.uid, widget.repository.catalogRepository);
   int _index = 0;
   bool _busy = false;
   String? _error;
   bool get _vendor => widget.profile.role == AccountRole.vendor;
+  @override
+  void dispose() { _cart.dispose(); super.dispose(); }
   List<String> get _labels => _vendor
       ? ['Dashboard', 'Orders', 'Menu', 'Profile']
       : ['Home', 'Orders', 'Cart', 'Queue', 'Profile'];
@@ -115,10 +121,13 @@ class _HomeScreenState extends State<HomeScreen> {
           ? VendorProfile(profile: widget.profile, repository: widget.repository)
           : _index == _labels.length - 1
           ? _profile()
+          : !_vendor && _index == 2
+          ? StudentCartScreen(cart: _cart, onBrowse: () => setState(() => _index = 0))
           : !_vendor && _index == 0
           ? StudentHome(repository: widget.repository.catalogRepository,
-              onStall: (stall) => ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('${stall.stall.name} menu is being prepared.'))))
+              onStall: (stall) => Navigator.push(context, MaterialPageRoute(builder: (_) => StudentStallMenu(
+                vendorId: stall.id, repository: widget.repository.catalogRepository!, cart: _cart,
+                onCart: () { Navigator.pop(context); setState(() => _index = 2); }))))
           : Center(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.all(24),

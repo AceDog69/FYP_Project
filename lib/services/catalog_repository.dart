@@ -8,6 +8,15 @@ abstract class CatalogRepository {
   Stream<MenuData<CatalogStall>> stall(String vendorUid);
   Stream<MenuData<MenuCategory>> categories(String vendorUid);
   Stream<MenuData<MenuFood>> foods(String vendorUid);
+  Future<CatalogSelection> selection(String vendorUid, String foodId);
+}
+
+String catalogError(Object error) {
+  if (error is AccountException) return error.message;
+  if (error is FirebaseException && error.code == 'permission-denied') {
+    return 'This selection could not be accessed. Refresh the menu and retry.';
+  }
+  return 'The current menu could not be confirmed. Check your connection and retry.';
 }
 
 /// Only deliberately public fields are selected, never a spread of source data.
@@ -60,6 +69,25 @@ class FirebaseCatalogRepository extends CatalogRepository {
   Stream<MenuData<MenuFood>> foods(String vendorUid) => _watch(
     db.collection('stalls').doc(vendorUid).collection('menuFoods').where('available', isEqualTo: true),
     (id, d, _) => MenuFood.decode(vendorUid, id, d));
+
+  @override
+  Future<CatalogSelection> selection(String vendorUid, String foodId) async {
+    final session = currentUid();
+    if (session == null) throw const AccountException('Please sign in again.');
+    const server = GetOptions(source: Source.server);
+    final listing = await db.collection('publicStalls').doc(vendorUid).get(server);
+    final food = await db.collection('stalls').doc(vendorUid).collection('menuFoods').doc(foodId).get(server);
+    if (!listing.exists || !food.exists) throw const AccountException('This selection is no longer available.');
+    final item = MenuFood.decode(vendorUid, food.id, food.data()!);
+    final category = await db.collection('stalls').doc(vendorUid).collection('menuCategories')
+        .doc(item.draft.categoryId).get(server);
+    if (currentUid() != session || !item.draft.available || !category.exists) {
+      throw const AccountException('Your session or this menu selection changed. Please retry.');
+    }
+    // A current display check, not an atomic checkout/order guarantee.
+    return CatalogSelection(CatalogStall.decode(vendorUid, listing.data()!), item,
+      MenuCategory.decode(vendorUid, category.id, category.data()!));
+  }
 
   /// Owner-driven, idempotent publication of existing stalls. No student can
   /// backfill another vendor. Runs against the server, never an offline queue.

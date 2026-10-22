@@ -26,7 +26,13 @@ class AuthGate extends StatelessWidget {
           ),
         );
       }
-      return ProfileGate(key: ValueKey(repository.uid), repository: repository);
+      // Scope detail routes and Student dialogs to the authenticated UID. A
+      // logout/account change disposes the whole navigator, including the cart.
+      return Navigator(
+        key: ValueKey('session-${repository.uid}'),
+        onGenerateRoute: (_) => MaterialPageRoute<void>(
+          builder: (_) => ProfileGate(key: ValueKey(repository.uid), repository: repository)),
+      );
     },
   );
 }

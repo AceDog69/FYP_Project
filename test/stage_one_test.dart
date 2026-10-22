@@ -9,6 +9,7 @@ import 'package:my_fyp_app/services/auth_repository.dart';
 import 'package:my_fyp_app/services/validators.dart';
 import 'package:my_fyp_app/widgets/auth_widgets.dart';
 import 'support/fake_menu_repository.dart';
+import 'support/fake_catalog_repository.dart';
 
 UserProfile profile(AccountRole role, {bool setup = false}) => UserProfile(
   uid: 'test-user',
@@ -25,6 +26,8 @@ UserProfile profile(AccountRole role, {bool setup = false}) => UserProfile(
 class TestRepository extends AuthRepository {
   @override
   final FakeMenuRepository menuRepository = FakeMenuRepository();
+  @override
+  final FakeCatalogRepository catalogRepository = FakeCatalogRepository();
   bool ready = true;
   String? currentUid;
   UserProfile? currentProfile, nextProfile;
@@ -93,7 +96,7 @@ class TestRepository extends AuthRepository {
 
   void session(UserProfile? value) {
     currentProfile = value;
-    currentUid = 'test-user';
+    currentUid = value?.uid ?? 'test-user';
     notifyListeners();
   }
 
@@ -153,6 +156,7 @@ class TestRepository extends AuthRepository {
   @override
   void dispose() {
     menuRepository.dispose();
+    catalogRepository.dispose();
     stallChanges.close();
     profiles.close();
     super.dispose();
@@ -328,7 +332,7 @@ void main() {
       );
       for (final label in ['Orders', 'Cart', 'Queue']) {
         await tap(tester, label);
-        expect(find.text('Coming soon'), findsOneWidget);
+        expect(find.text(label == 'Cart' ? 'Your cart is empty' : 'Coming soon'), findsOneWidget);
       }
       await tap(tester, 'Profile');
       expect(find.text('alex@example.com'), findsOneWidget);

@@ -462,5 +462,48 @@ proxy port 8080 is unreachable; Firebase CLI is absent. No runtime pass is claim
 Student S2-01/02/03 PNGs are not in supplied ZIPs; the approved written handover was
 inspected and is used. Missing visual references are not claimed reviewed.
 
-At this intermediate checkpoint Stall Menu and Cart implementation/tests are
-**pending**. The checkpoint must be remotely verified before continuing them.
+That intermediate checkpoint was verified on GitHub at
+`6bc6af9331c678f3c79d184b2deb17ea092b0f56` **before** continuing Stall Menu/Cart.
+
+### Stage 2B final implementation and acceptance pending
+
+Implemented Stall Menu: live stall/category/available-food data, category filters,
+description/picture/integer RM price, quantity selection, server-only selection
+refresh, cache/Closed/unavailable gating and error/Retry. No duplicate menu database.
+
+Implemented a local session-owned unpaid Cart: one Vendor; four distinct foods;
+1–20 units per item; integer-sen item and total arithmetic; add/increase/decrease;
+confirmed Remove/Clear; switching-stall confirmation that preserves the old Cart
+on Cancel or failed verification; empty state/browse navigation; visibly disabled
+Stage 2C Checkout. Cart survives tabs/details, clears on logout/account change or
+process exit, and never writes Firestore. UID-scoped authenticated routes dispose
+Student menus/dialogs with the Cart when the account changes. Profile UI is unchanged.
+
+Live menu listeners flag stale prices/names/category assignments, unavailable food,
+Closed stalls and unverified cached/error states. Old snapshots/totals persist until
+confirmed Review Changes with another server read. Future Stage 2C must securely
+revalidate canonical status/food/membership/price/quantity/limits and immutable order
+snapshots atomically; these unpaid display checks are not checkout guarantees.
+
+New tests: 5 Cart controller + 6 browsing/Cart widget cases; 8 Student catalog rules
+cases. Updated combined command `npm run test:student` includes all four rules
+modules (46 registered top-level cases, **not observed passes**). Existing auth test
+Cart expectation now checks the real empty Cart. All prior Vendor source/delete
+gates, 23 PNGs, dependencies, production config and debug/Windows setup are preserved.
+
+Actual execution: all four `node --check` security module checks and Git whitespace
+checks passed. The combined Firebase command stops with `firebase: not found`,
+exit 127. Dart SDK/executable are absent and the network proxy remains unreachable;
+`flutter analyze` / `flutter test` were **not run**, avoiding repeated failed SDK
+downloads as requested. **Zero new functional/security tests executed; no compile,
+Android acceptance, rule proof or runtime budget measurements claimed.** Historical
+Chrome/Dart loading remains incomplete and does not block ordinary Android testing.
+
+[Stage 2B implementation/security/Windows acceptance guide](stage_2b_student_browsing_cart.md)
+records the exact schema, permissions, existing-Vendor publication requirement,
+rules compatibility, limits, all test commands and Pixel 6 checklist. Existing Vendors
+must revisit the new app or save settings/status to publish; no automatic production
+backfill is done. Missing Student PNGs remain a visual-reference gap. The final
+verified branch SHA is reported in final chat and GitHub history. Resume from that
+verified commit. Stage 2C Checkout/Orders and Stage 3 queue/FCFS/ETA/notifications
+remain unimplemented and require later review; no merge, deployment or paid service.
