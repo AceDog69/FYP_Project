@@ -14,9 +14,12 @@ Future<bool> confirmCartAction(BuildContext context, String title, String messag
     ])) ?? false;
 
 class StudentCartScreen extends StatefulWidget {
-  const StudentCartScreen({super.key, required this.cart, required this.onBrowse});
+  const StudentCartScreen({super.key, required this.cart, required this.onBrowse,
+    this.onCheckout, this.checkoutAvailable = false});
   final StudentCart cart;
   final VoidCallback onBrowse;
+  final VoidCallback? onCheckout;
+  final bool checkoutAvailable;
   @override
   State<StudentCartScreen> createState() => _StudentCartScreenState();
 }
@@ -38,6 +41,10 @@ class _StudentCartScreenState extends State<StudentCartScreen> {
       Text('Your Cart', style: Theme.of(context).textTheme.headlineSmall),
       const SizedBox(height: 8), const Text('Unpaid selections — no order has been placed.'),
       ErrorMessage(_error),
+      if (cart.checkoutLocked) ...[
+        const Text('An unconfirmed checkout is retained. Resolve it before editing your cart.'),
+        OutlinedButton(onPressed: widget.onCheckout, child: const Text('Resolve Checkout')),
+      ],
       if (cart.lines.isEmpty) ...[
         const Padding(padding: EdgeInsets.all(32), child: Text('Your cart is empty', textAlign: TextAlign.center)),
         FilledButton(onPressed: widget.onBrowse, child: const Text('Browse Stalls')),
@@ -58,7 +65,7 @@ class _StudentCartScreenState extends State<StudentCartScreen> {
             if (cart.issue(line) != null) ...[
               const SizedBox(height: 8), Text(cart.issue(line)!, style: const TextStyle(color: mutedText)),
               if (cart.confirmed && cart.currentFood(line.food.id) != null)
-                TextButton(onPressed: _busy ? null : () => _action(() async {
+                TextButton(onPressed: _busy || cart.checkoutLocked ? null : () => _action(() async {
                   final current = cart.currentFood(line.food.id)!;
                   final confirmed = await confirmCartAction(context, 'Review menu changes',
                     'Update ${line.food.draft.name} (${rm(line.food.draft.priceSen)}) to '
@@ -68,13 +75,13 @@ class _StudentCartScreenState extends State<StudentCartScreen> {
             ],
             Wrap(crossAxisAlignment: WrapCrossAlignment.center, spacing: 8, children: [
               IconButton(tooltip: 'Decrease ${line.food.id}', icon: const Icon(Icons.remove_circle_outline),
-                onPressed: _busy || line.quantity <= 1 ? null : () => _action(() async =>
+                onPressed: _busy || cart.checkoutLocked || line.quantity <= 1 ? null : () => _action(() async =>
                   cart.quantity(line.food.id, line.quantity - 1))),
               Text('${line.quantity}', key: ValueKey('quantity-${line.food.id}')),
               IconButton(tooltip: 'Increase ${line.food.id}', icon: const Icon(Icons.add_circle_outline),
-                onPressed: _busy || line.quantity >= StudentCart.maxQuantity || cart.warning != null || cart.issue(line) != null
+                onPressed: _busy || cart.checkoutLocked || line.quantity >= StudentCart.maxQuantity || cart.warning != null || cart.issue(line) != null
                   ? null : () => _action(() async => cart.quantity(line.food.id, line.quantity + 1))),
-              TextButton(onPressed: _busy ? null : () => _action(() async {
+              TextButton(onPressed: _busy || cart.checkoutLocked ? null : () => _action(() async {
                 final confirmed = await confirmCartAction(context, 'Remove item?',
                   'Remove ${line.food.draft.name} from this unpaid cart?', 'Remove');
                 if (mounted && confirmed) cart.remove(line.food.id);
@@ -83,10 +90,11 @@ class _StudentCartScreenState extends State<StudentCartScreen> {
           ]))),
         const SizedBox(height: 16), Text('Total: ${rm(cart.totalSen)}',
           style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: primaryOrange)),
-        const Text('Display prices must be verified again during future checkout.'),
+        const Text('Checkout verifies authoritative menu data and prices again.'),
         const SizedBox(height: 16),
-        const FilledButton(onPressed: null, child: Text('Checkout — available in Stage 2C')),
-        TextButton(onPressed: _busy ? null : () => _action(() async {
+        FilledButton(onPressed: !widget.checkoutAvailable || !cart.checkoutEligible || cart.checkoutLocked
+          ? null : widget.onCheckout, child: const Text('Review Checkout')),
+        TextButton(onPressed: _busy || cart.checkoutLocked ? null : () => _action(() async {
           final confirmed = await confirmCartAction(context, 'Clear Cart?',
             'Remove all unpaid selections from your cart?', 'Clear Cart');
           if (mounted && confirmed) cart.clear();

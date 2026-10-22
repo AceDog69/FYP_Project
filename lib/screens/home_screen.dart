@@ -11,6 +11,10 @@ import 'student_home.dart';
 import 'student_stall_menu.dart';
 import 'student_cart_screen.dart';
 import '../services/student_cart.dart';
+import '../services/checkout_controller.dart';
+import '../models/confirmed_order.dart';
+import 'checkout_screen.dart';
+import 'orders_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({
@@ -26,12 +30,24 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   late final _cart = StudentCart(widget.profile.uid, widget.repository.catalogRepository);
+  late final _checkout = CheckoutController(_cart, widget.repository.orderRepository);
   int _index = 0;
   bool _busy = false;
   String? _error;
   bool get _vendor => widget.profile.role == AccountRole.vendor;
   @override
-  void dispose() { _cart.dispose(); super.dispose(); }
+  void dispose() { _checkout.dispose(); _cart.dispose(); super.dispose(); }
+  void _openCheckout([CheckoutRequest? request]) {
+    if (request != null) {
+      try { _checkout.resume(request); }
+      catch (_) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Resolve the open checkout first.')));
+        return;
+      }
+    }
+    Navigator.push(context, MaterialPageRoute(builder: (_) => CheckoutScreen(controller: _checkout,
+      onOrders: () { Navigator.pop(context); setState(() => _index = 1); })));
+  }
   List<String> get _labels => _vendor
       ? ['Dashboard', 'Orders', 'Menu', 'Profile']
       : ['Home', 'Orders', 'Cart', 'Queue', 'Profile'];
@@ -121,8 +137,12 @@ class _HomeScreenState extends State<HomeScreen> {
           ? VendorProfile(profile: widget.profile, repository: widget.repository)
           : _index == _labels.length - 1
           ? _profile()
+          : _index == 1
+          ? OrdersScreen(repository: widget.repository.orderRepository, vendor: _vendor,
+              onResume: _vendor ? null : _openCheckout)
           : !_vendor && _index == 2
-          ? StudentCartScreen(cart: _cart, onBrowse: () => setState(() => _index = 0))
+          ? StudentCartScreen(cart: _cart, onBrowse: () => setState(() => _index = 0),
+              onCheckout: _openCheckout, checkoutAvailable: widget.repository.orderRepository != null)
           : !_vendor && _index == 0
           ? StudentHome(repository: widget.repository.catalogRepository,
               onStall: (stall) => Navigator.push(context, MaterialPageRoute(builder: (_) => StudentStallMenu(

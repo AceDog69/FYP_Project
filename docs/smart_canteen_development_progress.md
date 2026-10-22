@@ -531,3 +531,47 @@ and the unmeasured 10-per-header / 20-distinct-state worst-case access estimate.
 The expression budget is unmeasured. SDK/CLI remain unavailable, proxy port 8080
 unreachable; no download retry or runtime pass is claimed. Both Vendor Delete
 gates remain closed. Back up and verify this checkpoint before UI/tests continue.
+
+### Stage 2C final source / proof and enabling still pending
+
+Intermediate core backup verified on GitHub before UI/tests:
+`dc40fe4bb42c570caa42e291ae3ebfeddea39e48`. Continued on the same Stage 2C branch.
+
+Implemented eligible Cart → Checkout Review, simulated methods/no-money message,
+same-ID pending/retry/discard controller, Cart locking and receipt-only clearing,
+success/ticket view, Student Orders/details/persisted-request recovery and read-only
+Vendor inbox with live immutable snapshots/ticket ordering. Added targeted item
+Retry, cached labels, stable order-card identities and account/session isolation.
+Student Queue remains a placeholder. No Stage 3 status actions or queue/ETA work.
+
+**Confirm Order and all request/order/counter writes remain disabled in the real
+client and checked-in rules.** Safe client-only checkout has not been demonstrated
+here. The candidate proof opens only an in-memory emulator gate. Static budget
+estimate is at 10 header / 20 distinct write-authorization states for four distinct
+categories, depending on cache reuse; transaction read authorization and expression
+quotas are also unmeasured. This is a precise blocker, not successful Rules proof.
+Both old Vendor delete gates remain closed.
+
+New runnable coverage: 8 controller/model + 6 UI tests; 19 new checkout security
+cases, including direct malicious writes, canonical membership/category checks,
+same-ID retries, parallel per-stall ticket assignment, immutable order history,
+safe request discard races and offline behavior. `npm run test:checkout` includes
+all prior suites (65 registered cases, not observed passes). Raw Rules coverage is
+saved to an ignored artifact when available, without claiming per-request counts.
+
+Actual checks: all Firebase `.mjs` syntax checks, Git whitespace checks and 42
+protected-file byte comparisons passed, including 23 PNGs and user Stage 2B fixes.
+The Firebase runner stops with `firebase: not found`, exit 127. Flutter/Dart SDK is
+absent; analyze/test were not run and no repeat download was attempted. **Zero new
+functional/security cases executed; Dart/Rules uncompiled; Android, race proof,
+ticket proof and runtime expression/access evidence pending.** Base acceptance
+and deferred simultaneous-account manual Cart scenario remain as recorded above.
+
+The [Stage 2C handover](stage_2c_checkout_orders.md) contains schema, invariants,
+two-phase recovery/tombstone lifecycle, exact commands, gated versus later-enabled
+Pixel 6 checks, unmeasured limitations and the Stage 3 integration contract. Missing
+Student order/checkout PNGs are recorded; written approved behavior was used.
+Final verified GitHub SHA is reported in final chat/history. Resume there, never
+rebuild. No main merge, production rules/data change, migration or paid service.
+Stage 3 requires successful proof, review, a separate gate-enabling change and
+complete checkout/Student/Vendor Android acceptance first.

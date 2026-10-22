@@ -76,7 +76,9 @@ service cloud.firestore {
         && i.keys().hasOnly(['foodId','name','description','categoryId','pictureId','priceSen','quantity','foodRevision'])
         && safeId(i.foodId) && safeId(i.categoryId)
         && i.name is string && i.name.size() >= 1 && i.name.size() <= 100
+        && i.name.matches('^\\S([\\s\\S]*\\S)?$')
         && i.description is string && i.description.size() >= 1 && i.description.size() <= 500
+        && i.description.matches('^\\S([\\s\\S]*\\S)?$')
         && validStallPicture(i.pictureId) && i.priceSen is int && i.priceSen >= 1 && i.priceSen <= 100000
         && i.quantity is int && i.quantity >= 1 && i.quantity <= 20
         && i.foodRevision is int && i.foodRevision >= 1;
@@ -120,6 +122,8 @@ service cloud.firestore {
         && category.vendorUid == vendorUid && i.categoryName == category.name
         && category.name is string && category.name.size() >= 1 && category.name.size() <= 50
         && category.revision is int && category.revision >= 1
+        && category.createdAt is timestamp && category.updatedAt is timestamp
+        && category.nameKey == category.name.lower()
         && membership.keys().hasOnly(['vendorUid','categoryId'])
         && membership.vendorUid == vendorUid && membership.categoryId == i.categoryId;
     }
@@ -137,6 +141,7 @@ service cloud.firestore {
         && d.vendorUid == intent.vendorUid && d.stallName == intent.stallName && d.stallName == stall.name
         && stall.ownerUid == d.vendorUid && stall.status == 'open'
         && d.preparationMinutes == stall.preparationMinutes
+        && d.preparationMinutes is int && d.preparationMinutes >= 1 && d.preparationMinutes <= 180
         && d.paymentStatus == 'simulated' && d.paymentMethod == intent.paymentMethod
         && d.status == 'Pending' && d.createdAt == request.time
         && d.itemCount is int && d.itemCount >= 1 && d.itemCount <= 4 && d.itemCount == intent.items.size()
@@ -155,6 +160,7 @@ service cloud.firestore {
       return d.keys().hasAll(['schemaVersion','vendorUid','lastTicket','lastOrderId','updatedAt'])
         && d.keys().hasOnly(['schemaVersion','vendorUid','lastTicket','lastOrderId','updatedAt'])
         && d.schemaVersion == 1 && d.vendorUid == uid && d.lastTicket is int && d.lastTicket >= 1 && d.lastTicket <= 2147483647
+        && d.lastOrderId is string && d.lastOrderId.matches('^[A-Za-z0-9]{20}$')
         && d.updatedAt == request.time && order.studentUid == request.auth.uid && order.vendorUid == uid
         && order.orderId == d.lastOrderId && order.ticket == d.lastTicket && order.status == 'Pending';
     }
@@ -276,10 +282,13 @@ service cloud.firestore {
       allow delete: if false;
     }
     match /checkoutCounters/{vendorUid} {
-      allow read: if configuredVendor(vendorUid) || studentMenuReader(vendorUid);
+      allow read: if studentMenuReader(vendorUid) || configuredVendor(vendorUid);
       allow create: if checkoutWritesEnabled() && student() && validCounter(request.resource.data, vendorUid)
         && request.resource.data.lastTicket == 1;
       allow update: if checkoutWritesEnabled() && student() && resource.data.schemaVersion == 1
+        && resource.data.keys().hasOnly(['schemaVersion','vendorUid','lastTicket','lastOrderId','updatedAt'])
+        && resource.data.lastTicket is int && resource.data.lastTicket >= 1 && resource.data.lastTicket < 2147483647
+        && resource.data.lastOrderId is string && resource.data.updatedAt is timestamp
         && resource.data.vendorUid == vendorUid && validCounter(request.resource.data, vendorUid)
         && request.resource.data.lastTicket == resource.data.lastTicket + 1;
       allow delete: if false;
@@ -324,7 +333,7 @@ service cloud.firestore {
         && getAfter(/databases/$(database)/documents/users/$(stallId)).data.stallId == stallId;
 
       match /menuCategories/{categoryId} {
-        allow read: if configuredVendor(stallId) || studentMenuReader(stallId);
+        allow read: if studentMenuReader(stallId) || configuredVendor(stallId);
         allow create: if configuredVendor(stallId) && validMenuCategory(request.resource.data, stallId)
           && request.resource.data.revision == 1 && request.resource.data.createdAt == request.time
           && getAfter(categoryNamePath(stallId, request.resource.data.nameKey)).data.categoryId == categoryId;
@@ -351,8 +360,8 @@ service cloud.firestore {
           && getAfter(categoryPath(stallId, resource.data.categoryId)).data.nameKey != key;
       }
       match /menuFoods/{foodId} {
-        allow read: if configuredVendor(stallId)
-          || (studentMenuReader(stallId) && resource.data.available == true);
+        allow read: if (studentMenuReader(stallId) && resource.data.available == true)
+          || configuredVendor(stallId);
         allow create: if configuredVendor(stallId) && validMenuFood(request.resource.data, stallId)
           && request.resource.data.createdAt == request.time && request.resource.data.revision == 1
           && linkedFood(stallId, foodId, request.resource.data.categoryId);

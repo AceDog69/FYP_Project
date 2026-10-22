@@ -16,11 +16,16 @@ class OrderItem {
   Map<String, dynamic> get snapshotMap => {...draftMap, 'categoryName': categoryName, 'subtotalSen': subtotalSen};
   factory OrderItem.decode(Map<String, dynamic> d, {bool snapshot = false}) {
     if (['foodId','name','description','categoryId','pictureId'].any((k) => d[k] is! String) ||
+        (d['foodId'] as String).isEmpty || (d['foodId'] as String).length > 128 || (d['foodId'] as String).contains('/') ||
+        (d['categoryId'] as String).isEmpty || (d['categoryId'] as String).length > 128 || (d['categoryId'] as String).contains('/') ||
+        (d['name'] as String).trim().isEmpty || (d['name'] as String).length > 100 ||
+        (d['description'] as String).trim().isEmpty || (d['description'] as String).length > 500 ||
         d['priceSen'] is! int || d['priceSen'] < 1 || d['priceSen'] > 100000 ||
         d['quantity'] is! int || d['quantity'] < 1 || d['quantity'] > 20 ||
         d['foodRevision'] is! int || d['foodRevision'] < 1 ||
         !predefinedPictures.containsKey(d['pictureId']) ||
-        (snapshot && (d['categoryName'] is! String || d['subtotalSen'] != d['priceSen'] * d['quantity']))) {
+        (snapshot && (d['categoryName'] is! String || (d['categoryName'] as String).trim().isEmpty ||
+          (d['categoryName'] as String).length > 50 || d['subtotalSen'] != d['priceSen'] * d['quantity']))) {
       throw const FormatException('Invalid order item.');
     }
     return OrderItem(foodId: d['foodId'], name: d['name'], description: d['description'],
@@ -34,6 +39,8 @@ class CheckoutRequest {
     required this.stallName, required List<OrderItem> items, required this.paymentMethod,
     this.state = 'pending', this.createdAt}) : items = List.unmodifiable(items) {
     if (!RegExp(r'^[A-Za-z0-9]{20}$').hasMatch(id) || items.isEmpty || items.length > 4 ||
+        studentUid.isEmpty || studentUid.length > 128 || vendorUid.isEmpty || vendorUid.length > 128 || vendorUid.contains('/') ||
+        stallName.trim().isEmpty || stallName.length > 100 ||
         items.map((i) => i.foodId).toSet().length != items.length ||
         !simulatedPaymentMethods.containsKey(paymentMethod)) throw const FormatException('Invalid checkout request.');
     for (final item in items) { OrderItem.decode(item.draftMap); }
@@ -76,6 +83,7 @@ class ConfirmedOrder {
         d['paymentStatus'] != 'simulated' || d['ticket'] is! int || d['ticket'] < 1 ||
         d['itemCount'] is! int || d['itemCount'] < 1 || d['itemCount'] > 4 ||
         d['totalSen'] is! int || d['totalSen'] < 1 || d['preparationMinutes'] is! int ||
+        d['preparationMinutes'] < 1 || d['preparationMinutes'] > 180 || d['ticket'] > 2147483647 ||
         d['createdAt'] is! Timestamp || d['firstItem'] is! Map ||
         ['studentUid','vendorUid','stallName','paymentMethod'].any((k) => d[k] is! String) ||
         !simulatedPaymentMethods.containsKey(d['paymentMethod'])) throw const FormatException('Invalid confirmed order.');
@@ -88,7 +96,8 @@ class ConfirmedOrder {
 
 class OrderReceipt {
   OrderReceipt(this.order, List<OrderItem> items) : items = List.unmodifiable(items) {
-    if (items.length != order.itemCount || items.fold<int>(0, (s, i) => s + i.subtotalSen) != order.totalSen) {
+    if (items.length != order.itemCount || items.map((i) => i.foodId).toSet().length != items.length ||
+        items.fold<int>(0, (s, i) => s + i.subtotalSen) != order.totalSen) {
       throw const FormatException('Incomplete confirmed order.');
     }
   }

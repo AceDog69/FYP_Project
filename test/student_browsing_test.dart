@@ -53,9 +53,11 @@ void main() {
     await tester.tap(find.byTooltip('Increase bowl')); await tester.pumpAndSettle();
     expect(find.text('Total: RM 25.50'), findsOneWidget);
     await tester.tap(find.byTooltip('Decrease bowl')); await tester.pumpAndSettle();
-    await stage.tap(tester, 'Orders'); expect(find.text('Coming soon'), findsOneWidget);
+    await stage.tap(tester, 'Orders'); expect(find.text('No orders yet'), findsOneWidget);
     await stage.tap(tester, 'Cart'); expect(find.text('Total: RM 17.00'), findsOneWidget);
-    expect(tester.widget<FilledButton>(find.widgetWithText(FilledButton, 'Checkout — available in Stage 2C')).onPressed, isNull);
+    await stage.tap(tester, 'Review Checkout');
+    expect(tester.widget<FilledButton>(find.widgetWithText(FilledButton, 'Confirm Order')).onPressed, isNull);
+    await tester.pageBack(); await tester.pumpAndSettle();
     await stage.tap(tester, 'Clear Cart'); await stage.tap(tester, 'Cancel');
     expect(find.text('Rice Bowl'), findsOneWidget);
     await stage.tap(tester, 'Clear Cart'); await stage.tap(tester, 'Clear Cart');

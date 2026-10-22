@@ -67,6 +67,7 @@ class FirebaseOrderRepository extends OrderRepository {
       final counter = await tx.get(counterRef);
       final previousTicket = counter.data()?['lastTicket'] ?? 0;
       if (counter.exists && (counter.data()?['schemaVersion'] != 1 || counter.data()?['vendorUid'] != intent.vendorUid ||
+          counter.data()!.length != 5 || counter.data()?['lastOrderId'] is! String || counter.data()?['updatedAt'] is! Timestamp ||
           previousTicket is! int || previousTicket < 1 || previousTicket >= 2147483647)) {
         throw const AccountException('The ticket counter could not be verified.');
       }
@@ -136,7 +137,8 @@ class FirebaseOrderRepository extends OrderRepository {
       if (intent.state == 'pending') tx.update(ref, {'state': 'cancelled', 'updatedAt': FieldValue.serverTimestamp()});
       return false;
     });
-    return confirmed ? _receipt(uid, request.id) : null;
+    if (confirmed) return _receipt(uid, request.id);
+    return null;
   }
 
   Stream<MenuData<T>> _watch<T>(Query<Map<String, dynamic>> query, T Function(String, Map<String, dynamic>) decode) async* {

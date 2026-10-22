@@ -105,7 +105,7 @@ void main() {
     await tester.ensureVisible(find.text('View Orders'));
     await tester.pumpAndSettle();
     await stage.tap(tester, 'View Orders');
-    expect(find.text('Coming soon'), findsOneWidget);
+    expect(find.text('No orders yet'), findsOneWidget);
     await stage.tap(tester, 'Dashboard');
     await tester.ensureVisible(find.text('Manage Menu'));
     await tester.pumpAndSettle();

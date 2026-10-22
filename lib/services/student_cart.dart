@@ -23,6 +23,7 @@ class StudentCart extends ChangeNotifier {
   bool _active = true;
   int _generation = 0;
   int _version = 0;
+  String? _checkoutId;
   MenuData<CatalogStall>? _stall;
   MenuData<MenuFood>? _foods;
   MenuData<MenuCategory>? _categories;
@@ -32,6 +33,9 @@ class StudentCart extends ChangeNotifier {
   StreamSubscription<MenuData<MenuCategory>>? _categorySub;
 
   bool get active => _active;
+  bool get checkoutLocked => _checkoutId != null;
+  bool get checkoutEligible => _active && _lines.isNotEmpty && _lines.length <= maxProducts &&
+    warning == null && _lines.values.every((line) => issue(line) == null);
   int get version => _version;
   String? get vendorId => _vendorId;
   String get stallName => _stall?.items.firstOrNull?.stall.name ?? _stallName ?? '';
@@ -60,8 +64,23 @@ class StudentCart extends ChangeNotifier {
   void _checkActive() {
     if (!_active) throw const AccountException('This cart session has ended.');
   }
-  void add(CatalogSelection selection, int quantity, {bool replaceStall = false}) {
+  void _checkEditable() {
     _checkActive();
+    if (checkoutLocked) throw const AccountException('Resolve or safely discard the pending checkout before changing your cart.');
+  }
+  void lockCheckout(String id) {
+    _checkActive();
+    if (_checkoutId != null && _checkoutId != id) throw const AccountException('Resolve the existing checkout first.');
+    _checkoutId = id; notifyListeners();
+  }
+  void releaseCheckout(String id, {required bool clearConfirmed, required int expectedVersion}) {
+    _checkActive();
+    if (_checkoutId != id) throw const AccountException('Your checkout session changed.');
+    _checkoutId = null;
+    if (clearConfirmed && _version == expectedVersion) { clear(); } else { notifyListeners(); }
+  }
+  void add(CatalogSelection selection, int quantity, {bool replaceStall = false}) {
+    _checkEditable();
     final vendor = selection.stall;
     final food = selection.food;
     if (vendor.stall.isCached || !vendor.stall.isOpen || !food.draft.available ||
@@ -90,7 +109,7 @@ class StudentCart extends ChangeNotifier {
   }
 
   void quantity(String id, int value) {
-    _checkActive();
+    _checkEditable();
     final line = _lines[id];
     if (line == null) return;
     if (value < 1 || value > maxQuantity) throw const AccountException('Use 1–20 units per item.');
@@ -100,20 +119,20 @@ class StudentCart extends ChangeNotifier {
     _lines[id] = CartLine(line.food, value); _version++; notifyListeners();
   }
   void remove(String id) {
-    _checkActive(); _lines.remove(id); _version++;
+    _checkEditable(); _lines.remove(id); _version++;
     if (_lines.isEmpty) { clear(); } else { notifyListeners(); }
   }
   void clear() {
-    _checkActive(); _lines.clear(); _vendorId = null; _stallName = null; _version++;
+    _checkEditable(); _lines.clear(); _vendorId = null; _stallName = null; _version++;
     _stop(); notifyListeners();
   }
 
   Future<void> review(String id, int shownRevision) async {
-    _checkActive();
+    _checkEditable();
     final vendor = _vendorId, version = _version;
     if (repository == null || vendor == null) throw const AccountException('Refresh the cart first.');
     final selection = await repository!.selection(vendor, id);
-    _checkActive();
+    _checkEditable();
     if (_vendorId != vendor || _version != version || !_lines.containsKey(id)) {
       throw const AccountException('Your cart changed. Please retry.');
     }
