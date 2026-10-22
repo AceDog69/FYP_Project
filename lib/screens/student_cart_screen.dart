@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../constants/checkout_limits.dart';
 import '../models/vendor_menu.dart';
 import '../services/catalog_repository.dart';
 import '../services/student_cart.dart';
@@ -40,6 +41,7 @@ class _StudentCartScreenState extends State<StudentCartScreen> {
     return ListView(padding: const EdgeInsets.all(20), children: [
       Text('Your Cart', style: Theme.of(context).textTheme.headlineSmall),
       const SizedBox(height: 8), const Text('Unpaid selections — no order has been placed.'),
+      const Text(checkoutLimitsLabel),
       ErrorMessage(_error),
       if (cart.checkoutLocked) ...[
         const Text('An unconfirmed checkout is retained. Resolve it before editing your cart.'),

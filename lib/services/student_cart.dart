@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import '../constants/checkout_limits.dart';
 import '../models/catalog.dart';
 import '../models/vendor_menu.dart';
 import 'auth_repository.dart';
@@ -17,7 +18,7 @@ class StudentCart extends ChangeNotifier {
   StudentCart(this.ownerUid, this.repository);
   final String ownerUid;
   final CatalogRepository? repository;
-  static const maxProducts = 4, maxQuantity = 20;
+  static const maxProducts = maxCheckoutProducts, maxQuantity = maxCheckoutQuantity;
   final _lines = <String, CartLine>{};
   String? _vendorId, _stallName;
   bool _active = true;
@@ -93,7 +94,7 @@ class StudentCart extends ChangeNotifier {
     final count = (previous?.quantity ?? 0) + quantity;
     if (quantity < 1 || count > maxQuantity) throw const AccountException('Use 1–20 units per item.');
     if (!switching && previous == null && _lines.length >= maxProducts) {
-      throw const AccountException('A cart can contain at most four distinct foods.');
+      throw const AccountException('A cart can contain at most two distinct foods.');
     }
     if (previous != null && previous.food.revision != food.revision) {
       throw const AccountException('Review this item in your cart before adding more.');

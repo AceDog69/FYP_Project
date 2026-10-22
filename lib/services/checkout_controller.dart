@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import '../constants/checkout_limits.dart';
 import '../models/confirmed_order.dart';
 import 'auth_repository.dart';
 import 'order_repository.dart';
@@ -19,6 +20,9 @@ class CheckoutController extends ChangeNotifier {
 
   void resume(CheckoutRequest saved) {
     if (!_active || saved.studentUid != cart.ownerUid) throw const AccountException('Your session changed.');
+    if (saved.items.isEmpty || saved.items.length > maxCheckoutProducts) {
+      throw const AccountException('Checkout supports one or two distinct foods.');
+    }
     if (_request != null && _request!.id != saved.id) throw const AccountException('Resolve the open checkout first.');
     if (_request == null) {
       _request = saved; _cartVersion = cart.version; _clearMatchingCart = false;
@@ -32,6 +36,9 @@ class CheckoutController extends ChangeNotifier {
     if (_busy) return null;
     if (!enabled) { error = 'Confirmation awaits executed security verification.'; notifyListeners(); return null; }
     if (!_active || !cart.active) throw const AccountException('Your checkout session ended.');
+    if ((_request?.items.length ?? cart.lines.length) > maxCheckoutProducts) {
+      error = 'Checkout supports at most two distinct foods.'; notifyListeners(); return null;
+    }
     if (_request == null) {
       if (!cart.checkoutEligible) { error = 'Refresh and review your cart before checkout.'; notifyListeners(); return null; }
       final saved = CheckoutRequest(id: repository!.newSubmissionId(), studentUid: cart.ownerUid,

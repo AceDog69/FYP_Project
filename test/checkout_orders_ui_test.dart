@@ -4,7 +4,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:my_fyp_app/models/confirmed_order.dart';
 import 'package:my_fyp_app/models/user_profile.dart';
 import 'package:my_fyp_app/services/auth_repository.dart';
+import 'package:my_fyp_app/services/student_cart.dart';
 import 'package:my_fyp_app/screens/orders_screen.dart';
+import 'package:my_fyp_app/screens/student_cart_screen.dart';
 import 'support/catalog_fixtures.dart';
 import 'support/fake_order_repository.dart';
 import 'stage_one_test.dart' as stage;
@@ -26,10 +28,30 @@ void main() {
     final repo = stage.TestRepository()..session(stage.profile(AccountRole.student)); addTearDown(repo.dispose);
     await openCheckout(tester, repo);
     expect(find.text('Checkout Review'), findsOneWidget); expect(find.text('Total: RM 8.50'), findsOneWidget);
+    expect(find.text('Up to two distinct foods per order, 1–20 units each.'), findsOneWidget);
     expect(find.textContaining('no money is charged'), findsOneWidget);
     expect(find.byType(ChoiceChip), findsNWidgets(3));
     expect(tester.widget<FilledButton>(find.widgetWithText(FilledButton,'Confirm Order')).onPressed, isNull);
     expect(repo.orderRepository.submitCalls, 0);
+  });
+
+  testWidgets('Pixel 6 Cart displays the two-food limit and keeps forty units eligible for review', (tester) async {
+    final repo = stage.TestRepository(); addTearDown(repo.dispose); populate(repo.catalogRepository);
+    repo.catalogRepository.foodItems['alpha']!.add(food('drink', price: 905, category: 'drinks'));
+    final cart = StudentCart('test-user', repo.catalogRepository); addTearDown(cart.dispose);
+    cart.add(await repo.catalogRepository.selection('alpha','bowl'), 20);
+    cart.add(await repo.catalogRepository.selection('alpha','drink'), 20);
+    await tester.binding.setSurfaceSize(const Size(412,915));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    var reviews = 0;
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: StudentCartScreen(cart: cart,
+      onBrowse: () {}, checkoutAvailable: true, onCheckout: () => reviews++))));
+    await tester.pumpAndSettle();
+    expect(find.text('Up to two distinct foods per order, 1–20 units each.'), findsOneWidget);
+    await tester.ensureVisible(find.text('Review Checkout'));
+    expect(find.text('Total: RM 351.00'), findsOneWidget);
+    expect(tester.widget<FilledButton>(find.widgetWithText(FilledButton,'Review Checkout')).onPressed, isNotNull);
+    await tester.tap(find.text('Review Checkout')); expect(reviews, 1); expect(cart.itemCount, 40);
   });
 
   testWidgets('acknowledged checkout clears Cart; pending duplicate taps do not confirm twice; Orders/details work', (tester) async {

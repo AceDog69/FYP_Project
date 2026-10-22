@@ -92,15 +92,11 @@ service cloud.firestore {
         && d.stallName is string && d.stallName.size() >= 1 && d.stallName.size() <= 100
         && d.paymentMethod in ['ewallet','onlineBanking','card']
         && d.createdAt == request.time && d.updatedAt == request.time
-        && d.items is list && d.items.size() >= 1 && d.items.size() <= 4
+        && d.items is list && d.items.size() >= 1 && d.items.size() <= 2
         && validDraftItem(d.items[0])
         && (d.items.size() < 2 || (validDraftItem(d.items[1]) && d.items[1].foodId != d.items[0].foodId))
-        && (d.items.size() < 3 || (validDraftItem(d.items[2]) && d.items[2].foodId != d.items[0].foodId && d.items[2].foodId != d.items[1].foodId))
-        && (d.items.size() < 4 || (validDraftItem(d.items[3]) && d.items[3].foodId != d.items[0].foodId && d.items[3].foodId != d.items[1].foodId && d.items[3].foodId != d.items[2].foodId))
         && d.totalSen is int && d.totalSen == draftSubtotal(d.items[0])
-          + (d.items.size() > 1 ? draftSubtotal(d.items[1]) : 0)
-          + (d.items.size() > 2 ? draftSubtotal(d.items[2]) : 0)
-          + (d.items.size() > 3 ? draftSubtotal(d.items[3]) : 0);
+          + (d.items.size() > 1 ? draftSubtotal(d.items[1]) : 0);
     }
     function matchesDraft(i, expected) {
       // The durable draft has exactly eight validated, immutable fields. Only
@@ -134,8 +130,6 @@ service cloud.firestore {
       let stall = get(/databases/$(database)/documents/stalls/$(d.vendorUid)).data;
       let counter = getAfter(counterPath(d.vendorUid)).data;
       let second = d.itemCount < 2 || existsAfter(orderItemPath(id, '1'));
-      let third = d.itemCount < 3 || existsAfter(orderItemPath(id, '2'));
-      let fourth = d.itemCount < 4 || existsAfter(orderItemPath(id, '3'));
       return d == {'schemaVersion':1, 'orderId':id, 'submissionId':id, 'studentUid':request.auth.uid,
           'vendorUid':intent.vendorUid, 'stallName':stall.name, 'preparationMinutes':stall.preparationMinutes,
           'ticket':counter.lastTicket, 'itemCount':intent.items.size(), 'totalSen':intent.totalSen,
@@ -146,7 +140,8 @@ service cloud.firestore {
         && stall.ownerUid == d.vendorUid && stall.status == 'open'
         && d.preparationMinutes is int && d.preparationMinutes >= 1 && d.preparationMinutes <= 180
         // Count/total/payment bounds originate in the immutable prepared draft.
-        && d.itemCount is int && d.totalSen is int && d.ticket is int && d.ticket >= 1
+        && d.itemCount is int && d.itemCount >= 1 && d.itemCount <= 2
+        && d.totalSen is int && d.ticket is int && d.ticket >= 1
         && counter.vendorUid == d.vendorUid && counter.lastOrderId == id
         && validOrderItem(d.firstItem, intent.items[0], d.vendorUid)
         // A child cannot pre-exist its header: its own create rule requires
@@ -154,7 +149,7 @@ service cloud.firestore {
         // slot here; validate each child's snapshot ONCE in its own create rule.
         // Prepared total == sum(draft price * quantity), immutable thereafter;
         // each canonical snapshot equals that slot's draft and exact subtotal.
-        && second && third && fourth;
+        && second;
     }
     function validCounter(d, uid) {
       let order = getAfter(orderPath(d.lastOrderId)).data;
@@ -168,12 +163,11 @@ service cloud.firestore {
       let order = getAfter(orderPath(id)).data;
       return order.studentUid == uid && order.vendorUid == vendorUid && order.submissionId == id;
     }
-    function validOrderChild(d, id, index) {
+    function validOrderChild(d, id) {
       let order = getAfter(orderPath(id)).data;
       let intent = getAfter(requestPath(request.auth.uid, id)).data;
-      let slot = index == '1' ? 1 : (index == '2' ? 2 : 3);
       return order.studentUid == request.auth.uid && order.createdAt == request.time
-        && slot < order.itemCount && validOrderItem(d, intent.items[slot], order.vendorUid);
+        && order.itemCount == 2 && validOrderItem(d, intent.items[1], order.vendorUid);
     }
     function orderReader(d) {
       return signedIn() && ((d.studentUid == request.auth.uid && student())
@@ -308,8 +302,8 @@ service cloud.firestore {
       allow update, delete: if false;
       match /items/{index} {
         allow read: if orderReader(get(orderPath(orderId)).data);
-        allow create: if checkoutWritesEnabled() && signedIn() && index in ['1','2','3']
-          && validOrderChild(request.resource.data, orderId, index);
+        allow create: if checkoutWritesEnabled() && signedIn() && index == '1'
+          && validOrderChild(request.resource.data, orderId);
         allow update, delete: if false;
       }
     }

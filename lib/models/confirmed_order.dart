@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../constants/checkout_limits.dart';
 import '../constants/predefined_pictures.dart';
 
 const simulatedPaymentMethods = {'ewallet': 'E-Wallet', 'onlineBanking': 'Online Banking', 'card': 'Credit / Debit Card'};
@@ -21,7 +22,7 @@ class OrderItem {
         (d['name'] as String).trim().isEmpty || (d['name'] as String).length > 100 ||
         (d['description'] as String).trim().isEmpty || (d['description'] as String).length > 500 ||
         d['priceSen'] is! int || d['priceSen'] < 1 || d['priceSen'] > 100000 ||
-        d['quantity'] is! int || d['quantity'] < 1 || d['quantity'] > 20 ||
+        d['quantity'] is! int || d['quantity'] < 1 || d['quantity'] > maxCheckoutQuantity ||
         d['foodRevision'] is! int || d['foodRevision'] < 1 ||
         !predefinedPictures.containsKey(d['pictureId']) ||
         (snapshot && (d['categoryName'] is! String || (d['categoryName'] as String).trim().isEmpty ||
@@ -38,7 +39,7 @@ class CheckoutRequest {
   CheckoutRequest({required this.id, required this.studentUid, required this.vendorUid,
     required this.stallName, required List<OrderItem> items, required this.paymentMethod,
     this.state = 'pending', this.createdAt}) : items = List.unmodifiable(items) {
-    if (!RegExp(r'^[A-Za-z0-9]{20}$').hasMatch(id) || items.isEmpty || items.length > 4 ||
+    if (!RegExp(r'^[A-Za-z0-9]{20}$').hasMatch(id) || items.isEmpty || items.length > maxCheckoutProducts ||
         studentUid.isEmpty || studentUid.length > 128 || vendorUid.isEmpty || vendorUid.length > 128 || vendorUid.contains('/') ||
         stallName.trim().isEmpty || stallName.length > 100 ||
         items.map((i) => i.foodId).toSet().length != items.length ||
@@ -77,7 +78,11 @@ class ConfirmedOrder {
   ConfirmedOrder({required this.id, required this.studentUid, required this.vendorUid,
     required this.stallName, required this.ticket, required this.totalSen, required this.itemCount,
     required this.preparationMinutes, required this.paymentMethod, required this.createdAt,
-    required this.firstItem, this.status = 'Pending'});
+    required this.firstItem, this.status = 'Pending'}) {
+    if (itemCount < 1 || itemCount > maxCheckoutProducts) {
+      throw const FormatException('Invalid confirmed order size.');
+    }
+  }
   final String id, studentUid, vendorUid, stallName, paymentMethod, status;
   final int ticket, totalSen, itemCount, preparationMinutes;
   final Timestamp createdAt;
@@ -85,7 +90,7 @@ class ConfirmedOrder {
   factory ConfirmedOrder.decode(String id, Map<String, dynamic> d) {
     if (d['schemaVersion'] != 1 || d['orderId'] != id || d['submissionId'] != id || d['status'] != 'Pending' ||
         d['paymentStatus'] != 'simulated' || d['ticket'] is! int || d['ticket'] < 1 ||
-        d['itemCount'] is! int || d['itemCount'] < 1 || d['itemCount'] > 4 ||
+        d['itemCount'] is! int || d['itemCount'] < 1 || d['itemCount'] > maxCheckoutProducts ||
         d['totalSen'] is! int || d['totalSen'] < 1 || d['preparationMinutes'] is! int ||
         d['preparationMinutes'] < 1 || d['preparationMinutes'] > 180 || d['ticket'] > 2147483647 ||
         d['createdAt'] is! Timestamp || d['firstItem'] is! Map ||
@@ -102,7 +107,8 @@ class ConfirmedOrder {
 
 class OrderReceipt {
   OrderReceipt(this.order, List<OrderItem> items) : items = List.unmodifiable(items) {
-    if (items.length != order.itemCount || items.map((i) => i.foodId).toSet().length != items.length ||
+    if (items.isEmpty || items.length > maxCheckoutProducts || items.length != order.itemCount ||
+        items.map((i) => i.foodId).toSet().length != items.length ||
         items.fold<int>(0, (s, i) => s + i.subtotalSen) != order.totalSen) {
       throw const FormatException('Incomplete confirmed order.');
     }

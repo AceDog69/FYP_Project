@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../constants/checkout_limits.dart';
 import '../models/confirmed_order.dart';
 import '../models/vendor_menu.dart';
 import 'auth_repository.dart';
@@ -36,6 +37,9 @@ class FirebaseOrderRepository extends OrderRepository {
   void _guard(CheckoutRequest request) {
     if (!canCheckout) throw const AccountException('Order confirmation awaits executed security verification.');
     if (request.studentUid != _uid) throw const AccountException('Your checkout session changed.');
+    if (request.items.isEmpty || request.items.length > maxCheckoutProducts) {
+      throw const AccountException('Checkout supports one or two distinct foods.');
+    }
   }
   @override
   String newSubmissionId() => db.collection('orders').doc().id;
@@ -161,8 +165,8 @@ class FirebaseOrderRepository extends OrderRepository {
         'itemCount': snapshots.length, 'totalSen': intent.totalSen, 'status': 'Pending',
         'paymentMethod': intent.paymentMethod, 'paymentStatus': 'simulated',
         'createdAt': FieldValue.serverTimestamp(), 'firstItem': snapshots.first.snapshotMap});
-      for (var i = 1; i < snapshots.length; i++) {
-        tx.set(_order(intent.id).collection('items').doc('$i'), snapshots[i].snapshotMap);
+      if (snapshots.length == maxCheckoutProducts) {
+        tx.set(_order(intent.id).collection('items').doc('1'), snapshots[1].snapshotMap);
       }
       tx.set(counterRef, {'schemaVersion': 1, 'vendorUid': intent.vendorUid, 'lastTicket': ticket,
         'lastOrderId': intent.id, 'updatedAt': FieldValue.serverTimestamp()});

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../constants/checkout_limits.dart';
 import '../models/confirmed_order.dart';
 import '../models/vendor_menu.dart';
 import '../services/checkout_controller.dart';
@@ -34,6 +35,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         ] : [
           Text(saved?.stallName ?? cart.stallName, style: Theme.of(context).textTheme.headlineSmall),
           const SizedBox(height: 12),
+          const Text(checkoutLimitsLabel),
           const Text('Simulated payment only — no money is charged.', style: TextStyle(color: primaryOrange, fontWeight: FontWeight.w700)),
           const SizedBox(height: 16),
           for (final item in saved?.items ?? cart.lines.map((l) => OrderItem(foodId: l.food.id,

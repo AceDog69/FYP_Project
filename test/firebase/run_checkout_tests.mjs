@@ -26,7 +26,7 @@ const evidence=logs.some(log=>log.text.length>0);
 mkdirSync(resolve(directory,'artifacts'),{recursive:true});
 writeFileSync(resolve(directory,'artifacts/checkout-budget-diagnostics.json'),JSON.stringify({
   childExitCode:code,logs:logs.map(log=>log.path),budgetDiagnostics:failures,
-  note:'No per-request expression count is inferred from log silence. Positive 1–4-item tests must also pass.'
+  note:'No per-request expression count is inferred from log silence. Positive 1–2-food, over-limit rejection and all integrity/concurrency tests must also pass.'
 },null,2));
 if(!evidence) process.stderr.write('FAIL: Firestore debug log missing/empty; budget evidence unavailable.\n');
 if(failures.length) process.stderr.write(`FAIL: ${failures.length} Rules budget diagnostics; negative assertions do not count as proof.\n`);

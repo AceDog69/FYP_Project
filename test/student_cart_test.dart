@@ -16,18 +16,31 @@ void main() {
     CatalogSelection(repo.stallItems.firstWhere((s) => s.id == vendor), food(id, price: price),
       const MenuCategory('rice', 'Rice', 1));
 
-  test('integer sen totals, quantity limits and four distinct products are enforced', () async {
-    for (var i = 0; i < 4; i++) { cart.add(selection('alpha', 'f$i', price: 105), 1); }
-    expect(cart.totalSen, 420); expect(cart.lines.length, 4);
-    expect(() => cart.add(selection('alpha', 'fifth'), 1), throwsA(isA<AccountException>()));
+  test('integer sen totals, quantity limits and two distinct products are enforced', () async {
+    for (var i = 0; i < 2; i++) { cart.add(selection('alpha', 'f$i', price: 105), 1); }
+    expect(cart.totalSen, 210); expect(cart.lines.length, 2);
+    expect(() => cart.add(selection('alpha', 'third'), 1), throwsA(isA<AccountException>()));
     cart.add(selection('alpha', 'f0', price: 105), 19);
-    expect(cart.lines.first.quantity, 20); expect(cart.totalSen, 2415);
+    expect(cart.lines.first.quantity, 20); expect(cart.totalSen, 2205);
+    cart.add(selection('alpha', 'f1', price: 105), 19);
+    expect(cart.lines.last.quantity, 20); expect(cart.totalSen, 4200);
     expect(() => cart.add(selection('alpha', 'f0'), 1), throwsA(isA<AccountException>()));
     expect(() => cart.quantity('f0', 21), throwsA(isA<AccountException>()));
     expect(() => cart.quantity('f0', 0), throwsA(isA<AccountException>()));
-    cart.quantity('f0', 1); expect(cart.totalSen, 420);
-    cart.remove('f0'); expect(cart.lines.length, 3);
+    cart.quantity('f0', 1); cart.quantity('f1', 1); expect(cart.totalSen, 210);
+    cart.remove('f0'); expect(cart.lines.length, 1);
     cart.clear(); expect(cart.totalSen, 0); expect(cart.vendorId, isNull);
+  });
+
+  test('two current foods remain eligible; a rejected third preserves quantities and totals', () async {
+    repo.foodItems['alpha']!.add(food('drink', price: 905, category: 'drinks'));
+    cart.add(await repo.selection('alpha', 'bowl'), 20);
+    cart.add(await repo.selection('alpha', 'drink'), 20);
+    repo.emit(); await settleStreams();
+    expect(cart.checkoutEligible, true); expect(cart.itemCount, 40);
+    expect(cart.totalSen, 35100); expect(cart.lines.length, 2);
+    expect(() => cart.add(selection('alpha', 'third'), 1), throwsA(isA<AccountException>()));
+    expect(cart.checkoutEligible, true); expect(cart.itemCount, 40); expect(cart.totalSen, 35100);
   });
 
   test('single vendor requires explicit replacement and validates before discarding old cart', () {

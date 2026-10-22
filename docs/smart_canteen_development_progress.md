@@ -649,3 +649,72 @@ reviewed. Both checkout gates and both Vendor deletion gates remain disabled.
 No Firebase deployment/data change, merge, SDK/dependency version change or new
 feature is included. Stop for review; Stage 3 queue/FCFS/ETA/notifications remain
 pending separately, and the historical Chrome/Dart loading gap remains open.
+
+## Stage 2C — approved two-food scope, 22 October 2026
+
+This entry supersedes earlier four-food limits and test counts above. The user
+approved a maximum of **two distinct foods per Cart/order**, retaining twenty
+units per food, one stall, integer-sen totals, simulated payment and all canonical
+ownership/integrity, ticket, idempotency and concurrency protections.
+
+Verified and imported latest GitHub base
+`341e7c2d051a15a2f19fe47e26862cac0e048df0` before editing, preserving the user's
+compile, mounted-context, nullability and broadcast-stream/widget fixes. Earlier
+repair backups `87b8d45` and `260f176` remain in history. Resume from the new exact
+verified final SHA in the delivery report/GitHub branch, not an older checkpoint.
+
+User's local evidence before this change: analyzer passed, Flutter **63/63**;
+positive one/two-food checkout passed without Rules exhaustion; three/four foods
+failed the 1,000-expression ceiling; preceding full suite had **53 budget
+diagnostics**. Working tree was clean. This is historical Windows evidence, not
+verification of the new two-food commit or a complete successful security proof.
+
+Implemented shared two-product/twenty-unit constants across Cart/eligibility,
+models, controller, repository and UI labels. A third distinct ID is rejected
+without discarding selections; additional units of existing foods remain allowed.
+Model construction/decoding and receipt integrity enforce the limit. Rules allow
+one inline snapshot and optional child `items/1` only, reject oversized preparation
+and confirmation, and remove unused third/fourth slot checks. Canonical source
+food/category/membership, availability/price/revision, stall and owner checks are
+preserved. Transactions still atomically confirm immutable snapshots, consume one
+sequential stall ticket and retain the same ID for retry/discard/recovery.
+
+Adapted maximum-size malicious snapshot/missing-document/canonical/ownership/race
+cases to two foods. Explicit separate three/four/five-food rejection cases also
+test seeded legacy oversized drafts and verify no order/ticket is created.
+Duplicate IDs, invalid quantities at either slot, forged totals, unique sequential
+tickets across four Students, same-ID replay and discard assertions remain.
+The four earlier security suites/46 cases are unchanged. Combined runner now has
+**70 expected security cases (24 checkout + 46 earlier)**; zero budget diagnostics
+and all assertions passing are mandatory. A failing negative test cannot be
+rescued by expression/access exhaustion. None of these security cases ran here.
+
+Offline investigation retains strict connectivity-only expected errors. The test
+now proves the online RPC traversed its forwarding socket before disconnection,
+then attempts real two-food checkout with all old/new RPC sockets blocked and
+checks pending/no-order/no-ticket through another client. Arbitrary permission
+or other exceptions do not qualify. Added an executable standalone transport test;
+its success proves the transport, not Firestore/Android offline behavior.
+
+Actual Codex results for this revision:
+
+- Diagnostic unit test **1/1 passed**; offline transport unit test **1/1 passed**.
+  The first restricted transport run failed with localhost `listen EPERM`; the
+  approved rerun allowing temporary localhost sockets passed.
+- All **12** Firebase `.mjs` syntax checks and Git whitespace checks passed.
+  Protected source/config/assets and earlier security modules were byte-checked.
+- Four new Flutter cases cover two-food eligibility/third rejection, twenty units
+  each, exact controller totals, oversized model records and Pixel 6 Cart labels;
+  existing Cart-limit and Checkout Review assertions were updated.
+- Flutter analyze/tests, Rules compilation, the 70-case emulator suite, budget
+  counts, actual Firebase concurrency/offline proof and Android remain **unrun**.
+  Flutter/Dart, Firebase CLI and Node dependencies are unavailable; no SDK or
+  dependency bootstrap/download was retried. No runtime pass is inferred.
+
+The [current Stage 2C handover](stage_2c_checkout_orders.md) documents the reduced
+schema, unchanged invariants, static/unmeasured budget, exact Windows/Pixel 6
+commands, all evidence and blockers. Historical Chrome/Dart loading remains open.
+Checkout Rules and the real client stay false; both Vendor deletion gates remain
+closed. No main merge, rules deployment, production data/migration, billing change,
+paid service or Stage 3 work is included. Stop after implementation for exact-commit
+local verification; enabling checkout and Stage 3 require successful proof/review.
