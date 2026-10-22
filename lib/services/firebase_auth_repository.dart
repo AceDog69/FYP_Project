@@ -6,6 +6,7 @@ import '../models/vendor_stall.dart';
 import 'auth_repository.dart';
 import 'vendor_menu_repository.dart';
 import 'catalog_repository.dart';
+import 'order_repository.dart';
 
 class FirebaseAuthRepository extends AuthRepository {
   FirebaseAuthRepository(this.auth, this.db) {
@@ -19,6 +20,8 @@ class FirebaseAuthRepository extends AuthRepository {
   late final VendorMenuRepository menuRepository = FirebaseVendorMenuRepository(db, () => uid);
   @override
   late final FirebaseCatalogRepository catalogRepository = FirebaseCatalogRepository(db, () => uid);
+  @override
+  late final OrderRepository orderRepository = FirebaseOrderRepository(db, () => uid);
   late final StreamSubscription<User?> _subscription;
   User? _user;
   bool _ready = false, _registering = false;

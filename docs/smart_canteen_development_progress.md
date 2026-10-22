@@ -2,7 +2,7 @@
 
 Updated 22 October 2026 (Asia/Singapore). Supervisor meeting: 28 October 2026.
 
-**Latest state:** the Stage 2B section at the end supersedes historical checkpoint
+**Latest state:** the Stage 2C section at the end supersedes historical checkpoint
 limitations/results below. Both Vendor destructive actions remain gated.
 
 ## Milestones and source
@@ -507,3 +507,27 @@ backfill is done. Missing Student PNGs remain a visual-reference gap. The final
 verified branch SHA is reported in final chat and GitHub history. Resume from that
 verified commit. Stage 2C Checkout/Orders and Stage 3 queue/FCFS/ETA/notifications
 remain unimplemented and require later review; no merge, deployment or paid service.
+
+## Stage 2C — core checkpoint
+
+Verified latest GitHub Stage 2B verification-fix HEAD and imported its exact tree:
+`7ba35a219b5f3267d1b95941265a7166cc70b024`. Created the new
+`feature/stage-2c-checkout-orders` branch from that exact commit, retaining all
+user test fixes. User reports Stage 2B Flutter/analyzer, 46/46 rules and core Pixel 6
+acceptance; simultaneous-account manual Cart acceptance remains deferred. These
+are user-reported base results, not Codex reruns.
+
+Core proposed implementation: durable owner-scoped checkout requests; immutable
+Pending orders with first item inline and up to three bounded child snapshots;
+atomic per-stall monotonic ticket counters; same-ID retry/recovery; safe terminal
+discard of unconfirmed requests. Rules validate canonical food/category/membership,
+Open source stall, snapshots, quantities, distinct IDs and integer totals. Private
+raw stall/membership reads are not opened to Students. No Stage 3 transitions.
+
+**Checkout confirmation and all new write rules remain gated false pending
+executed proof and review.** At the intermediate checkpoint UI/tests are pending.
+[Stage 2C handover](stage_2c_checkout_orders.md) records schema, invariants, recovery
+and the unmeasured 10-per-header / 20-distinct-state worst-case access estimate.
+The expression budget is unmeasured. SDK/CLI remain unavailable, proxy port 8080
+unreachable; no download retry or runtime pass is claimed. Both Vendor Delete
+gates remain closed. Back up and verify this checkpoint before UI/tests continue.

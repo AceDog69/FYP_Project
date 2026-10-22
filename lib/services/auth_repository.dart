@@ -3,10 +3,12 @@ import '../models/user_profile.dart';
 import '../models/vendor_stall.dart';
 import 'vendor_menu_repository.dart';
 import 'catalog_repository.dart';
+import 'order_repository.dart';
 
 abstract class AuthRepository extends ChangeNotifier {
   VendorMenuRepository? get menuRepository => null;
   CatalogRepository? get catalogRepository => null;
+  OrderRepository? get orderRepository => null;
   bool get authReady;
   String? get uid;
   String? get email;

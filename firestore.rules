@@ -64,6 +64,104 @@ service cloud.firestore {
     // The security suite opens ONLY this gate in its in-memory emulator rules,
     // and separately tests that this checked-in version still blocks deletion.
     function menuDeletesEnabled() { return false; }
+    // Closed until the bounded checkout proof is executed and reviewed.
+    function checkoutWritesEnabled() { return false; }
+    function orderPath(id) { return /databases/$(database)/documents/orders/$(id); }
+    function orderItemPath(id, index) { return /databases/$(database)/documents/orders/$(id)/items/$(index); }
+    function requestPath(uid, id) { return /databases/$(database)/documents/users/$(uid)/checkoutRequests/$(id); }
+    function counterPath(uid) { return /databases/$(database)/documents/checkoutCounters/$(uid); }
+    function safeId(id) { return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[^/]+$'); }
+    function validDraftItem(i) {
+      return i is map && i.keys().hasAll(['foodId','name','description','categoryId','pictureId','priceSen','quantity','foodRevision'])
+        && i.keys().hasOnly(['foodId','name','description','categoryId','pictureId','priceSen','quantity','foodRevision'])
+        && safeId(i.foodId) && safeId(i.categoryId)
+        && i.name is string && i.name.size() >= 1 && i.name.size() <= 100
+        && i.description is string && i.description.size() >= 1 && i.description.size() <= 500
+        && validStallPicture(i.pictureId) && i.priceSen is int && i.priceSen >= 1 && i.priceSen <= 100000
+        && i.quantity is int && i.quantity >= 1 && i.quantity <= 20
+        && i.foodRevision is int && i.foodRevision >= 1;
+    }
+    function draftSubtotal(i) { return i.priceSen * i.quantity; }
+    function validRequest(d, uid, id) {
+      return d.keys().hasAll(['schemaVersion','submissionId','studentUid','vendorUid','stallName','items','totalSen','paymentMethod','state','createdAt','updatedAt'])
+        && d.keys().hasOnly(['schemaVersion','submissionId','studentUid','vendorUid','stallName','items','totalSen','paymentMethod','state','createdAt','updatedAt'])
+        && d.schemaVersion == 1 && d.submissionId == id && id.matches('^[A-Za-z0-9]{20}$')
+        && d.studentUid == uid && safeId(d.vendorUid)
+        && d.stallName is string && d.stallName.size() >= 1 && d.stallName.size() <= 100
+        && d.paymentMethod in ['ewallet','onlineBanking','card']
+        && d.createdAt == request.time && d.updatedAt == request.time
+        && d.items is list && d.items.size() >= 1 && d.items.size() <= 4
+        && validDraftItem(d.items[0])
+        && (d.items.size() < 2 || (validDraftItem(d.items[1]) && d.items[1].foodId != d.items[0].foodId))
+        && (d.items.size() < 3 || (validDraftItem(d.items[2]) && d.items[2].foodId != d.items[0].foodId && d.items[2].foodId != d.items[1].foodId))
+        && (d.items.size() < 4 || (validDraftItem(d.items[3]) && d.items[3].foodId != d.items[0].foodId && d.items[3].foodId != d.items[1].foodId && d.items[3].foodId != d.items[2].foodId))
+        && d.totalSen is int && d.totalSen == draftSubtotal(d.items[0])
+          + (d.items.size() > 1 ? draftSubtotal(d.items[1]) : 0)
+          + (d.items.size() > 2 ? draftSubtotal(d.items[2]) : 0)
+          + (d.items.size() > 3 ? draftSubtotal(d.items[3]) : 0);
+    }
+    function matchesDraft(i, expected) {
+      return i.foodId == expected.foodId && i.name == expected.name && i.description == expected.description
+        && i.categoryId == expected.categoryId && i.pictureId == expected.pictureId
+        && i.priceSen == expected.priceSen && i.quantity == expected.quantity && i.foodRevision == expected.foodRevision
+        && i.subtotalSen == expected.priceSen * expected.quantity;
+    }
+    function validOrderItem(i, expected, vendorUid) {
+      let food = get(foodPath(vendorUid, i.foodId)).data;
+      let category = get(categoryPath(vendorUid, i.categoryId)).data;
+      let membership = get(membershipPath(vendorUid, i.foodId)).data;
+      return i.keys().hasAll(['foodId','name','description','categoryId','categoryName','pictureId','priceSen','quantity','subtotalSen','foodRevision'])
+        && i.keys().hasOnly(['foodId','name','description','categoryId','categoryName','pictureId','priceSen','quantity','subtotalSen','foodRevision'])
+        && matchesDraft(i, expected) && i.quantity is int && i.quantity >= 1 && i.quantity <= 20
+        && food.vendorUid == vendorUid && food.available == true && i.foodRevision == food.revision
+        && i.name == food.name && i.description == food.description && i.pictureId == food.pictureId
+        && i.categoryId == food.categoryId && i.priceSen == food.priceSen
+        && i.priceSen is int && i.priceSen >= 1 && i.priceSen <= 100000
+        && category.vendorUid == vendorUid && i.categoryName == category.name
+        && category.name is string && category.name.size() >= 1 && category.name.size() <= 50
+        && category.revision is int && category.revision >= 1
+        && membership.keys().hasOnly(['vendorUid','categoryId'])
+        && membership.vendorUid == vendorUid && membership.categoryId == i.categoryId;
+    }
+    function validOrder(d, id) {
+      let intent = getAfter(requestPath(request.auth.uid, id)).data;
+      let stall = get(/databases/$(database)/documents/stalls/$(d.vendorUid)).data;
+      let counter = getAfter(counterPath(d.vendorUid)).data;
+      let second = d.itemCount > 1 ? getAfter(orderItemPath(id, '1')).data : null;
+      let third = d.itemCount > 2 ? getAfter(orderItemPath(id, '2')).data : null;
+      let fourth = d.itemCount > 3 ? getAfter(orderItemPath(id, '3')).data : null;
+      return d.keys().hasAll(['schemaVersion','orderId','submissionId','studentUid','vendorUid','stallName','preparationMinutes','ticket','itemCount','totalSen','status','paymentMethod','paymentStatus','createdAt','firstItem'])
+        && d.keys().hasOnly(['schemaVersion','orderId','submissionId','studentUid','vendorUid','stallName','preparationMinutes','ticket','itemCount','totalSen','status','paymentMethod','paymentStatus','createdAt','firstItem'])
+        && d.schemaVersion == 1 && d.orderId == id && d.submissionId == id && d.studentUid == request.auth.uid
+        && intent.state == 'confirmed' && intent.submissionId == id && intent.studentUid == request.auth.uid
+        && d.vendorUid == intent.vendorUid && d.stallName == intent.stallName && d.stallName == stall.name
+        && stall.ownerUid == d.vendorUid && stall.status == 'open'
+        && d.preparationMinutes == stall.preparationMinutes
+        && d.paymentStatus == 'simulated' && d.paymentMethod == intent.paymentMethod
+        && d.status == 'Pending' && d.createdAt == request.time
+        && d.itemCount is int && d.itemCount >= 1 && d.itemCount <= 4 && d.itemCount == intent.items.size()
+        && d.ticket is int && d.ticket >= 1 && d.ticket == counter.lastTicket
+        && counter.vendorUid == d.vendorUid && counter.lastOrderId == id
+        && validOrderItem(d.firstItem, intent.items[0], d.vendorUid)
+        && (d.itemCount < 2 || matchesDraft(second, intent.items[1]))
+        && (d.itemCount < 3 || matchesDraft(third, intent.items[2]))
+        && (d.itemCount < 4 || matchesDraft(fourth, intent.items[3]))
+        && d.totalSen is int && d.totalSen == intent.totalSen && d.totalSen == d.firstItem.subtotalSen
+          + (d.itemCount > 1 ? second.subtotalSen : 0) + (d.itemCount > 2 ? third.subtotalSen : 0)
+          + (d.itemCount > 3 ? fourth.subtotalSen : 0);
+    }
+    function validCounter(d, uid) {
+      let order = getAfter(orderPath(d.lastOrderId)).data;
+      return d.keys().hasAll(['schemaVersion','vendorUid','lastTicket','lastOrderId','updatedAt'])
+        && d.keys().hasOnly(['schemaVersion','vendorUid','lastTicket','lastOrderId','updatedAt'])
+        && d.schemaVersion == 1 && d.vendorUid == uid && d.lastTicket is int && d.lastTicket >= 1 && d.lastTicket <= 2147483647
+        && d.updatedAt == request.time && order.studentUid == request.auth.uid && order.vendorUid == uid
+        && order.orderId == d.lastOrderId && order.ticket == d.lastTicket && order.status == 'Pending';
+    }
+    function orderReader(d) {
+      return signedIn() && ((d.studentUid == request.auth.uid && student())
+        || (d.vendorUid == request.auth.uid && configuredVendor(request.auth.uid)));
+    }
     function categoryPath(uid, id) {
       return /databases/$(database)/documents/stalls/$(uid)/menuCategories/$(id);
     }
@@ -157,6 +255,52 @@ service cloud.firestore {
               && request.resource.data.stallSetupComplete && request.resource.data.stallId == uid
               && !exists(/databases/$(database)/documents/stalls/$(uid))
               && validStall(getAfter(/databases/$(database)/documents/stalls/$(uid)).data, uid)));
+    }
+    match /users/{studentUid}/checkoutRequests/{submissionId} {
+      allow read: if owns(studentUid);
+      allow create: if checkoutWritesEnabled() && owns(studentUid) && student()
+        && validRequest(request.resource.data, studentUid, submissionId)
+        && (request.resource.data.state == 'pending'
+          || (request.resource.data.state == 'cancelled'
+            && (!existsAfter(orderPath(submissionId)) || getAfter(orderPath(submissionId)).data.studentUid != studentUid)));
+      allow update: if checkoutWritesEnabled() && owns(studentUid) && student()
+        && resource.data.state == 'pending'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['state','updatedAt'])
+        && request.resource.data.updatedAt == request.time
+        && ((request.resource.data.state == 'confirmed'
+            && getAfter(orderPath(submissionId)).data.studentUid == studentUid
+            && getAfter(orderPath(submissionId)).data.vendorUid == resource.data.vendorUid
+            && getAfter(orderPath(submissionId)).data.submissionId == submissionId)
+          || (request.resource.data.state == 'cancelled'
+            && (!existsAfter(orderPath(submissionId)) || getAfter(orderPath(submissionId)).data.studentUid != studentUid)));
+      allow delete: if false;
+    }
+    match /checkoutCounters/{vendorUid} {
+      allow read: if configuredVendor(vendorUid) || studentMenuReader(vendorUid);
+      allow create: if checkoutWritesEnabled() && student() && validCounter(request.resource.data, vendorUid)
+        && request.resource.data.lastTicket == 1;
+      allow update: if checkoutWritesEnabled() && student() && resource.data.schemaVersion == 1
+        && resource.data.vendorUid == vendorUid && validCounter(request.resource.data, vendorUid)
+        && request.resource.data.lastTicket == resource.data.lastTicket + 1;
+      allow delete: if false;
+    }
+    match /orders/{orderId} {
+      allow read: if orderReader(resource.data);
+      allow create: if checkoutWritesEnabled() && student() && validOrder(request.resource.data, orderId);
+      allow update, delete: if false;
+      match /items/{index} {
+        allow read: if orderReader(get(orderPath(orderId)).data);
+        allow create: if checkoutWritesEnabled() && signedIn() && index in ['1','2','3']
+          && getAfter(orderPath(orderId)).data.studentUid == request.auth.uid
+          && getAfter(orderPath(orderId)).data.createdAt == request.time
+          && ((index == '1' && getAfter(orderPath(orderId)).data.itemCount >= 2
+              && validOrderItem(request.resource.data, getAfter(requestPath(request.auth.uid, orderId)).data.items[1], getAfter(orderPath(orderId)).data.vendorUid))
+            || (index == '2' && getAfter(orderPath(orderId)).data.itemCount >= 3
+              && validOrderItem(request.resource.data, getAfter(requestPath(request.auth.uid, orderId)).data.items[2], getAfter(orderPath(orderId)).data.vendorUid))
+            || (index == '3' && getAfter(orderPath(orderId)).data.itemCount == 4
+              && validOrderItem(request.resource.data, getAfter(requestPath(request.auth.uid, orderId)).data.items[3], getAfter(orderPath(orderId)).data.vendorUid)));
+        allow update, delete: if false;
+      }
     }
     match /publicStalls/{vendorUid} {
       allow read: if student() || configuredVendor(vendorUid);
