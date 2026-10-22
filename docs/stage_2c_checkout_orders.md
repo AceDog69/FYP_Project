@@ -1,4 +1,14 @@
-# Stage 2C — secure two-food checkout, verification pending
+# Stage 2C — secure two-food checkout, local Android demo pending
+
+Latest accepted Windows evidence at `7c9ee91618a73b77a858900e84919b250ef7d030`:
+**70/70 security tests, zero budget diagnostics**, budget unit PASS and transport
+units **3/3 PASS**; Flutter previously analyzed clean and passed **67/67**.
+The user has now authorized emulator-only Android activation. Follow the
+[checkout-enabled local demo guide](stage_2c_emulator_checkout_demo.md) for the
+guarded Windows launcher, explicit debug flag, Pixel 6/two-device acceptance and
+safe shutdown. Production Rules and the normal repository remain closed; only
+the private named-demo repository can enable confirmation. No deployment or
+Stage 3 work is authorized. Historical evidence below belongs to its stated base.
 
 Branch: `feature/stage-2c-checkout-orders`.
 The two-food implementation preserved the user's compile and widget fixes at
@@ -10,7 +20,7 @@ starts from verified GitHub HEAD `1ace379bc02c8bb0d33b3aa131fc99e36d81d9cf`. His
 
 The user approved **two distinct foods per Cart/order**, one stall, **1–20 units
 per food**, integer-sen prices/totals and simulated payment. No money is charged.
-Do not expand the limit or enable checkout before successful proof and review.
+Do not expand the limit or enable production checkout without separate review.
 
 User-reported Windows results at `1ace379bc02c8bb0d33b3aa131fc99e36d81d9cf`:
 Flutter analyze passed, Flutter **67/67**, security **69/70**, and **zero Rules-budget

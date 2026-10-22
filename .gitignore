@@ -88,6 +88,11 @@ linked_*.ds
 unlinked.ds
 unlinked_spec.ds
 
+# Extra defense if someone copies disposable checkout demo files into the repo.
+smart-canteen-checkout-demo-*/
+*.checkout-demo-only.rules
+firebase.checkout-demo-only.json
+
 # Android related
 **/android/**/gradle-wrapper.jar
 .gradle/

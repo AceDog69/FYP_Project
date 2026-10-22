@@ -758,3 +758,55 @@ in the delivery report/history; resume there. Local success still requires **70/
 and zero budget diagnostics** on that exact commit. Both checkout gates and both
 Vendor deletion gates remain closed. No production deployment/data change, main
 merge, scope expansion, paid service or Stage 3 work is included. Stop for review.
+
+## Stage 2C — emulator-only Android checkout activation, 22 October 2026
+
+Verified latest remote starting HEAD:
+`7c9ee91618a73b77a858900e84919b250ef7d030`. The user reports **70/70** security
+cases passed, **zero** budget diagnostics, budget unit PASS, transport units
+**3/3 PASS**, and previously clean Flutter analysis / **67/67** Flutter tests.
+These are Windows acceptance of that starting commit, not Cloud reruns. Actual
+Pixel 6 checkout and a simultaneous Vendor live inbox are the remaining acceptance
+step; Stage 3 has not begun.
+
+Authorized only a local demo activation. Added `scripts/start_checkout_demo.cmd`
+and its Node launcher/generator. It permits only `demo-smart-canteen`, invokes
+only local Auth/Firestore emulators using the project's pinned CLI, refuses
+arbitrary Firebase arguments and changes only the single checkout gate in a
+temporary copy of checked-in Rules. Both Vendor deletion gates must remain false.
+Rules/config/logs are outside the repository in an owned OS temporary directory;
+default temporary project is demo-only, config is explicitly selected and no
+default deploy config is generated. Normal shutdown removes the files; ignore
+patterns add protection against accidentally copied artifacts. Production
+`firestore.rules`, `firebase.json` and existing configuration are unchanged.
+
+The production `main.dart`, Auth/Order repositories and checkout transactions
+remain byte-identical and disabled. Private subclasses in `main_emulator.dart`
+enable only the demo repository after emulator setup and only with all runtime
+conditions: debug, emulator entry point/setup, exact named synthetic Firebase app,
+`demo-smart-canteen`, explicit `EMULATOR_CHECKOUT=true`, synthetic options and a
+local port-8080 non-TLS endpoint. Normal main, profile/release, default/foreign/
+production apps, wrong endpoints and runs without the flag fail closed. Existing
+two-food/twenty-unit bounds, snapshots/tickets, Cart recovery and simulated payment
+are unchanged. No other security gate is opened.
+
+Cloud execution: launcher/generator tests **7/7 passed** after fixing an optional
+absent `.firebaserc` test fixture and allowing the sandboxed negative-launch
+subprocess. The subprocess rejected a real project before Firebase startup.
+Node syntax, temporary-file cleanup, Git scope/whitespace and protected-source
+checks passed. No Firebase emulator or production service was started.
+
+Written but unexecuted: **3 Flutter gate tests**, including 48 combinations of
+debug/entry/flag/app/project and additional synthetic/setup/endpoint checks plus
+the normal repository's closed gate. Flutter/Dart, Firebase CLI/dependencies and
+Windows shells are unavailable here; actual Windows CLI startup/Ctrl+C cleanup,
+Rules compilation, Flutter full regressions, the 70-case security rerun and Pixel
+6/two-device live receipt remain local acceptance. No bootstrap/download retry.
+
+[Beginner Windows/Pixel 6 demo guide](stage_2c_emulator_checkout_demo.md) contains
+exact preparation/start/run commands, synthetic Vendor/Student workflow, two-device
+live-inbox demonstration and safe stopping. Stop the manual demo before security
+tests reuse its ports. Latest verified final SHA is in the delivery report/history;
+resume from that branch commit. Production checkout and both deletion gates remain
+closed. No merge, deploy, paid service, Windows permission/policy change,
+production data access or Stage 3 implementation is included. Stop for review.
