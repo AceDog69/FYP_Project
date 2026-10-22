@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:my_fyp_app/models/confirmed_order.dart';
 import 'package:my_fyp_app/models/vendor_menu.dart';
+import 'package:my_fyp_app/models/vendor_queue.dart';
 import 'package:my_fyp_app/services/auth_repository.dart';
 import 'package:my_fyp_app/services/order_repository.dart';
 
@@ -20,6 +21,11 @@ CheckoutRequest withState(CheckoutRequest q, String state) => CheckoutRequest(id
 class FakeOrderRepository extends OrderRepository {
   FakeOrderRepository(this.currentUid);
   final String? Function() currentUid;
+  bool processingEnabled = false, queueCached = false;
+  Object? advanceError;
+  Completer<void>? pendingAdvance;
+  int advanceCalls = 0;
+  final queues = <String, VendorQueue>{};
   bool enabled = false, cached = false, loading = false, commitButLoseAck = false;
   Object? submitError, prepareError, streamError;
   String? errorTarget;
@@ -32,6 +38,36 @@ class FakeOrderRepository extends OrderRepository {
   final events = StreamController<int>.broadcast();
   @override
   bool get canCheckout => enabled;
+  @override
+  bool get canProcessOrders => processingEnabled;
+  @override
+  Stream<VendorQueue> queue() => _watch('queue', () => [
+    VendorQueue((queues[currentUid()] ?? const VendorQueue.initial()).nextTicket,
+      queues[currentUid()]?.preparingOrderId, queues[currentUid()]?.revision ?? 0,
+      cached: queueCached),
+  ]).map((data) => data.items.single);
+  @override
+  Future<void> advance(ConfirmedOrder expected) async {
+    advanceCalls++;
+    if (pendingAdvance != null) await pendingAdvance!.future;
+    if (advanceError != null) throw advanceError!;
+    if (!processingEnabled || cached || queueCached || currentUid() != expected.vendorUid) {
+      throw const AccountException('Processing is unavailable.');
+    }
+    final receipt = receipts[expected.id]!;
+    final before = receipt.order;
+    final cursor = queues[expected.vendorUid] ?? const VendorQueue.initial();
+    if (before.status != expected.status || before.statusRevision != expected.statusRevision || !cursor.permits(before)) {
+      throw const AccountException('This order changed. Refresh before retrying.');
+    }
+    final after = progressed(before);
+    receipts[before.id] = OrderReceipt(after, receipt.items);
+    if (after.status != 'Completed') {
+      queues[before.vendorUid] = VendorQueue(cursor.nextTicket + (after.status == 'Preparing' ? 1 : 0),
+        after.status == 'Preparing' ? before.id : null, cursor.revision + 1);
+    }
+    emit();
+  }
   @override
   String newSubmissionId() => 'order${(identities++).toString().padLeft(15, '0')}';
   @override
@@ -82,4 +118,17 @@ class FakeOrderRepository extends OrderRepository {
   Stream<MenuData<CheckoutRequest>> pendingRequests() => _watch('requests', () => requests.values
     .where((q) => q.studentUid == currentUid() && q.state == 'pending').toList());
   void dispose() { events.close(); }
+}
+
+// UI fixture only; authorization/integrity proof is in the emulator suite.
+ConfirmedOrder progressed(ConfirmedOrder before) {
+  final time = Timestamp.fromMillisecondsSinceEpoch(1792634401000 + before.statusRevision * 1000);
+  return ConfirmedOrder(id: before.id, studentUid: before.studentUid, vendorUid: before.vendorUid,
+    stallName: before.stallName, ticket: before.ticket, totalSen: before.totalSen, itemCount: before.itemCount,
+    preparationMinutes: before.preparationMinutes, paymentMethod: before.paymentMethod,
+    createdAt: before.createdAt, firstItem: before.firstItem, status: before.nextStatus!,
+    statusRevision: before.statusRevision + 1, statusUpdatedAt: time,
+    preparingAt: before.preparingAt ?? time,
+    readyAt: before.status == 'Preparing' ? time : before.readyAt,
+    completedAt: before.status == 'Ready' ? time : before.completedAt);
 }

@@ -25,11 +25,11 @@ beforeEach(async()=>{
 });
 afterEach(async()=>{
   try {
-    const response=await fetch(`http://127.0.0.1:8080/emulator/v1/projects/${env.projectId}:ruleCoverage`);
+    const response=await fetch(`http://127.0.0.1:8080/emulator/v1/projects/${env.projectId}:ruleCoverage`,{signal:AbortSignal.timeout(5000)});
     assert.equal(response.ok,true);
     mkdirSync(new URL('./artifacts/',import.meta.url),{recursive:true});
     writeFileSync(new URL(`./artifacts/fcfs-rule-coverage-${sequence}.json`,import.meta.url),JSON.stringify(await response.json()));
-  } finally {await env?.cleanup();}
+  } finally {await boundedOfflineCleanup(()=>env?.cleanup());}
 });
 async function deny(operation) {
   const error=await assertFails(operation);
@@ -121,7 +121,12 @@ test('Students, wrong Vendors, unconfigured Vendors and anonymous clients cannot
     await deny(setDoc(queueRef(attacker),queueData('vendor',2,first.orderId,1)));
     await deny(getDocFromServer(queueRef(attacker)));
   }
-  await assertSucceeds(advance(owner,first));
+  let order=await assertSucceeds(advance(owner,first));
+  const queue=(await getDocFromServer(queueRef(owner))).data();
+  for(const attacker of [student,other,unconfigured,anonymous]) await deny(raw(attacker,order,queue));
+  order=await advance(owner,order);
+  for(const attacker of [student,other,unconfigured,anonymous]) await deny(raw(attacker,order,queue));
+  await assertSucceeds(advance(owner,order));
 });
 
 test('invalid transitions, unknown states, missing revisions and forged server times are denied',async()=>{
@@ -132,6 +137,14 @@ test('invalid transitions, unknown states, missing revisions and forged server t
   for(const values of [{statusRevision:0},{statusRevision:2},{statusRevision:1.5},
     {statusUpdatedAt:new Date(0)},{preparingAt:new Date(0)},{readyAt:serverTimestamp()},{completedAt:serverTimestamp()}]) {
     await deny(raw(owner,first,initialQueue(),b=>b.update(orderRef(owner,first.orderId),values)));
+  }
+  for(const fields of [
+    {status:'Preparing',statusUpdatedAt:serverTimestamp(),preparingAt:serverTimestamp()},
+    {status:'Preparing',statusRevision:1,preparingAt:serverTimestamp()},
+    {status:'Preparing',statusRevision:1,statusUpdatedAt:serverTimestamp()},
+  ]) {
+    const batch=writeBatch(owner);batch.update(orderRef(owner,first.orderId),fields);
+    batch.set(queueRef(owner),queueData('vendor',2,first.orderId,1));await deny(batch.commit());
   }
   await assertSucceeds(advance(owner,first));
 });
@@ -187,6 +200,7 @@ test('parallel attempts to start the same ticket yield one transition and reject
   assert.equal((await read(owner,first)).statusRevision,1);
   assert.equal((await getDocFromServer(queueRef(owner))).data().revision,1);
   await assert.rejects(advance(owner,first),/stale-order/);
+  await deny(raw(owner,first,initialQueue())); // Raw replay must fail at Rules too.
 });
 
 test('concurrent direct starts of different tickets cannot skip or create two Preparing orders',async()=>{

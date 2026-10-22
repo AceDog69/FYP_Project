@@ -8,7 +8,9 @@ class VendorQueue {
   final String? preparingOrderId;
   final bool cached;
   factory VendorQueue.decode(String uid, Map<String, dynamic>? d, {bool cached = false}) {
-    if (d == null) return VendorQueue.initial(cached: cached);
+    if (d == null) {
+      return VendorQueue.initial(cached: cached);
+    }
     if (d.length != 6 || d['schemaVersion'] != 1 || d['vendorUid'] != uid ||
         d['nextTicket'] is! int || d['nextTicket'] < 2 || d['nextTicket'] > 2147483648 ||
         d['revision'] is! int || d['revision'] < 1 || d['updatedAt'] is! Timestamp ||
@@ -19,11 +21,13 @@ class VendorQueue {
     return VendorQueue(d['nextTicket'], d['preparingOrderId'], d['revision'], cached: cached);
   }
   bool permits(ConfirmedOrder order) {
-    if (cached) return false;
+    if (cached) {
+      return false;
+    }
     return switch (order.status) {
-    'Pending' => preparingOrderId == null && order.ticket == nextTicket,
-    'Preparing' => preparingOrderId == order.id,
-    'Ready' => true,
+      'Pending' => preparingOrderId == null && order.ticket == nextTicket,
+      'Preparing' => preparingOrderId == order.id,
+      'Ready' => true,
       _ => false,
     };
   }

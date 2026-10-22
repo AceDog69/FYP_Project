@@ -2,8 +2,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../constants/checkout_limits.dart';
 import '../models/confirmed_order.dart';
 import '../models/vendor_menu.dart';
-import 'auth_repository.dart';
 import '../models/vendor_queue.dart';
+import 'auth_repository.dart';
 import 'vendor_order_processing.dart';
 
 abstract class OrderRepository {

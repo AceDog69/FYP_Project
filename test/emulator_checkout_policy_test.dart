@@ -48,6 +48,8 @@ void main() {
   });
 
   test('normal Firebase repository stays disabled without touching Firebase', () {
-    expect(FirebaseOrderRepository(_NoNetworkFirestore(), () => 'student').canCheckout, false);
+    final normal = FirebaseOrderRepository(_NoNetworkFirestore(), () => 'student');
+    expect(normal.canCheckout, false);
+    expect(normal.canProcessOrders, false);
   });
 }

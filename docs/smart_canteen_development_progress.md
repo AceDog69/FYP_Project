@@ -2,7 +2,7 @@
 
 Updated 22 October 2026 (Asia/Singapore). Supervisor meeting: 28 October 2026.
 
-**Latest state:** the Stage 2C section at the end supersedes historical checkpoint
+**Latest state:** the Stage 3A candidate section at the end supersedes historical checkpoint
 limitations/results below. Both Vendor destructive actions remain gated.
 
 ## Milestones and source
@@ -833,3 +833,57 @@ Rules tests are written but not emulator-executed. Flutter/Dart and Firebase CLI
 are unavailable in Cloud. Focused Flutter tests and final checks/documentation
 are pending at this intermediate checkpoint. Stage 3B Student Queue/ETA and 3C
 notifications remain unstarted; no Firebase rules have been deployed.
+
+
+## Stage 3A — final candidate handover (22 October 2026)
+
+Intermediate GitHub backup verified on `feature/stage-3a-vendor-fcfs`:
+`e6ec9c18a9c1ce16a14f48f8acf8d02f6ae8f499`. The final delivery commit adds focused
+Flutter coverage, tighter retry/refresh gating and this verification handover.
+The exact final branch SHA is supplied in the delivery report; use `git rev-parse
+HEAD` after fetching/switching to verify that candidate locally.
+
+Implemented Vendor Pending → Preparing → Ready → Completed with owner-only,
+reciprocal order/cursor Rules checks. At most one Preparing; only the exact next
+per-stall ticket may start. Ready releases the slot; completion follows collection
+and does not occupy it. New protected `vendorQueues/{vendorUid}` stores the next
+never-started ticket, active preparation ID and revision. Orders gain immutable
+transition timestamps and monotonic status revisions; all accepted checkout
+identity/snapshot/payment/total/ticket fields and child items stay immutable.
+Legacy Pending records need no migration. Details now listen to current order
+status for both roles. Vendor cards retain the approved orange/white style, show
+readable badges, ticket/time/items/quantities/total, actions and status filters.
+
+The existing checkout transaction body and retry/recovery protocol are unchanged.
+Processing is enabled only inside the existing isolated flagged debug/demo entry;
+normal/release/production client processing remains disabled. The checked-in
+checkout gate, Food Delete and Category Delete remain closed. No deployment,
+production data write, billing change, Function, ETA, Student Queue or notification
+work was performed.
+
+Cloud actual results: **11/11 Node regression tests passed**, covering the unchanged
+emulator launcher (7), Rules-budget detector (1) and transport/cleanup helpers (3).
+JavaScript syntax checks for the three new/extended FCFS-related modules and
+`git diff --check` passed. **Flutter analysis/tests, Rules compilation, all emulator
+security cases and Android acceptance were NOT executed in Cloud.** Usable
+Flutter/Dart SDK binaries, Firebase CLI and Firebase npm dependencies are absent;
+no SDK downloads were retried. Base acceptance remains the user's 70 Flutter /
+70 security / zero-budget Windows report, not proof of this candidate.
+
+Added **13 Flutter tests** and **19 Rules tests**; `npm run test:fcfs` runs all earlier
+70 security cases plus these 19, preserving strict intended-denial checks and
+whole-run budget log inspection. Cases include stale/direct/immutable attacks,
+FCFS races, wrong owners/roles/stalls, real-time delivery and verified offline
+transport loss with independent server assertions before bounded cleanup.
+The written FCFS induction and static document-access review support the design;
+actual expression/access budgets and race outcomes remain unverified until the
+Windows suite passes with zero diagnostics. Do not represent this as executed
+server proof or production-ready deployment.
+
+[Stage 3A architecture, exact commands and Pixel 6 checklist](stage_3a_vendor_fcfs.md)
+contains beginner steps for `flutter analyze`, `flutter test`, `npm run test:fcfs`,
+the preserved safe demo launcher, flagged Android debug run and safe shutdown.
+Next step is local review/acceptance of this exact candidate; resolve any new
+analyzer/test/Rules failures first. The old Chrome integration loader stall remains
+an unpassed historical gap. Stage 3B Student Queue/ETA and Stage 3C notifications
+remain unstarted and require separate authorization.

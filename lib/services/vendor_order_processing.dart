@@ -21,15 +21,21 @@ class VendorOrderProcessing {
   Stream<VendorQueue> watch() async* {
     final uid = _uid;
     await for (final s in _queue(uid).snapshots(includeMetadataChanges: true)) {
-      if (_uid != uid) throw const AccountException('Your Vendor session changed.');
-      if (s.metadata.hasPendingWrites) continue;
+      if (_uid != uid) {
+        throw const AccountException('Your Vendor session changed.');
+      }
+      if (s.metadata.hasPendingWrites) {
+        continue;
+      }
       yield VendorQueue.decode(uid, s.data(), cached: s.metadata.isFromCache);
     }
   }
   Future<void> advance(ConfirmedOrder expected) async {
     final uid = _uid;
     _guard(uid);
-    if (_busy) throw const AccountException('Wait for the current status update.');
+    if (_busy) {
+      throw const AccountException('Wait for the current status update.');
+    }
     if (expected.vendorUid != uid || expected.nextStatus == null) {
       throw const AccountException('This order cannot be changed by this Vendor.');
     }
@@ -40,7 +46,9 @@ class VendorOrderProcessing {
         _guard(uid);
         final saved = await tx.get(ref), cursor = await tx.get(queueRef);
         _guard(uid);
-        if (!saved.exists) throw const AccountException('Order no longer exists. Refresh the inbox.');
+        if (!saved.exists) {
+          throw const AccountException('Order no longer exists. Refresh the inbox.');
+        }
         final order = ConfirmedOrder.decode(saved.id, saved.data()!);
         final queue = VendorQueue.decode(uid, cursor.data());
         if (order.vendorUid != uid || order.status != expected.status || order.statusRevision != expected.statusRevision) {

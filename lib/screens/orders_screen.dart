@@ -50,7 +50,9 @@ class _OrdersScreenState extends State<OrdersScreen> {
   @override
   void didUpdateWidget(covariant OrdersScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.repository != widget.repository || oldWidget.vendor != widget.vendor) _load();
+    if (oldWidget.repository != widget.repository || oldWidget.vendor != widget.vendor) {
+      _load();
+    }
   }
   void _load() {
     _orders = widget.repository?.orders(vendor: widget.vendor);
@@ -58,17 +60,23 @@ class _OrdersScreenState extends State<OrdersScreen> {
     _queue = widget.vendor && widget.repository?.canProcessOrders == true ? widget.repository?.queue() : null;
   }
   Future<void> _advance(ConfirmedOrder order) async {
-    if (_busy != null) return;
+    if (_busy != null) {
+      return;
+    }
     setState(() { _busy = order.id; _error = null; });
     try {
       await widget.repository!.advance(order);
       // Status is supplied by confirmed stream snapshots, never an optimistic
       // local replacement. A lost acknowledgement requires review, not replay.
     } catch (error) {
-      if (mounted) setState(() => _error = error is AccountException ? error.message
-        : 'Status update was not confirmed. Refresh, review the current status and retry.');
+      if (mounted) {
+        setState(() => _error = error is AccountException ? error.message
+          : 'Status update was not confirmed. Refresh, review the current status and retry.');
+      }
     } finally {
-      if (mounted) setState(() => _busy = null);
+      if (mounted) {
+        setState(() => _busy = null);
+      }
     }
   }
   @override
@@ -105,8 +113,12 @@ class _OrdersScreenState extends State<OrdersScreen> {
           child: const Text('Refresh orders before retrying')),
       ],
       if (!widget.vendor) StreamBuilder<MenuData<CheckoutRequest>>(stream: _requests, builder: (context, pending) {
-        if (pending.hasError) return TextButton(onPressed: () => setState(_load), child: const Text('Unable to recover checkouts. Retry'));
-        if (!pending.hasData) return const Text('Checking for unconfirmed requests…');
+        if (pending.hasError) {
+          return TextButton(onPressed: () => setState(_load), child: const Text('Unable to recover checkouts. Retry'));
+        }
+        if (!pending.hasData) {
+          return const Text('Checking for unconfirmed requests…');
+        }
         return Column(children: [for (final request in pending.data!.items) Card(child: ListTile(
           title: Text('Unconfirmed checkout: ${request.stallName}'), subtitle: Text(pending.data!.cached
             ? 'Cached request — status may be out of date.' : 'Not a confirmed order or ticket.'),
@@ -130,7 +142,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
             if (widget.vendor && widget.repository!.canProcessOrders && order.nextStatus != null) ...[
               const SizedBox(height: 12),
               FilledButton(key: ValueKey('advance-${order.id}'),
-                onPressed: _busy == null && !s.data!.cached && !cursor.hasError && cursor.hasData &&
+                onPressed: _busy == null && _error == null && !s.data!.cached && !cursor.hasError && cursor.hasData &&
                   cursor.connectionState != ConnectionState.waiting && cursor.data!.permits(order) ? () => _advance(order) : null,
                 child: Text(_busy == order.id ? 'Confirming with server…' : switch (order.status) {
                   'Pending' => 'Start Preparing', 'Preparing' => 'Mark as Ready', _ => 'Mark Completed after collection',
@@ -168,7 +180,9 @@ class _OrderItemsState extends State<_OrderItems> {
       return TextButton(onPressed: () => setState(() => _items = widget.repository.items(widget.order)),
         child: const Text('Unable to load items. Retry'));
     }
-    if (!s.hasData) return const Text('Loading order items…');
+    if (!s.hasData) {
+      return const Text('Loading order items…');
+    }
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       if (s.data!.cached) const Text('Cached item snapshots'),
       for (final item in s.data!.items) Padding(padding: const EdgeInsets.symmetric(vertical: 6), child: Row(children: [
@@ -193,11 +207,17 @@ class _OrderDetailsState extends State<OrderDetails> {
   @override
   Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: const Text('Order Details')),
     body: StreamBuilder<MenuData<ConfirmedOrder>>(stream: _orders, builder: (context, s) {
-      if (s.hasError) return Center(child: TextButton(onPressed: () => setState(() =>
-        _orders = widget.repository.orders(vendor: widget.vendor)), child: const Text('Unable to load order. Retry')));
-      if (!s.hasData) return const Center(child: CircularProgressIndicator());
+      if (s.hasError) {
+        return Center(child: TextButton(onPressed: () => setState(() =>
+          _orders = widget.repository.orders(vendor: widget.vendor)), child: const Text('Unable to load order. Retry')));
+      }
+      if (!s.hasData) {
+        return const Center(child: CircularProgressIndicator());
+      }
       final matches = s.data!.items.where((o) => o.id == widget.order.id);
-      if (matches.isEmpty) return const Center(child: Text('Order is unavailable for this account.'));
+      if (matches.isEmpty) {
+        return const Center(child: Text('Order is unavailable for this account.'));
+      }
       final order = matches.single;
       return ListView(padding: const EdgeInsets.all(20), children: [
         Text('Ticket #${order.ticket}', style: Theme.of(context).textTheme.headlineSmall),

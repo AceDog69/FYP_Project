@@ -104,7 +104,8 @@ class ConfirmedOrder {
           throw const FormatException('Invalid confirmed order.');
         }
     final revision = orderStatuses.indexOf(d['status'] as String);
-    if ((d['statusRevision'] ?? 0) != revision ||
+    if ((d.containsKey('statusRevision') && d['statusRevision'] is! int) ||
+        (d['statusRevision'] ?? 0) != revision ||
         (revision > 0 && (d['statusUpdatedAt'] is! Timestamp || d['preparingAt'] is! Timestamp)) ||
         (revision > 1 && d['readyAt'] is! Timestamp) || (revision > 2 && d['completedAt'] is! Timestamp)) {
       throw const FormatException('Invalid order progress.');
