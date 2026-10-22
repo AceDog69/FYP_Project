@@ -42,7 +42,9 @@ class CheckoutRequest {
         studentUid.isEmpty || studentUid.length > 128 || vendorUid.isEmpty || vendorUid.length > 128 || vendorUid.contains('/') ||
         stallName.trim().isEmpty || stallName.length > 100 ||
         items.map((i) => i.foodId).toSet().length != items.length ||
-        !simulatedPaymentMethods.containsKey(paymentMethod)) throw const FormatException('Invalid checkout request.');
+        !simulatedPaymentMethods.containsKey(paymentMethod)) {
+          throw const FormatException('Invalid checkout request.');
+        }
     for (final item in items) { OrderItem.decode(item.draftMap); }
   }
   final String id, studentUid, vendorUid, stallName, paymentMethod, state;
@@ -64,7 +66,9 @@ class CheckoutRequest {
     final request = CheckoutRequest(id: id, studentUid: d['studentUid'], vendorUid: d['vendorUid'],
       stallName: d['stallName'], paymentMethod: d['paymentMethod'], state: d['state'], createdAt: d['createdAt'],
       items: (d['items'] as List).map((i) => OrderItem.decode(Map<String, dynamic>.from(i as Map))).toList());
-    if (d['totalSen'] != request.totalSen) throw const FormatException('Invalid checkout total.');
+    if (d['totalSen'] != request.totalSen) {
+      throw const FormatException('Invalid checkout total.');
+    }
     return request;
   }
 }
@@ -86,7 +90,9 @@ class ConfirmedOrder {
         d['preparationMinutes'] < 1 || d['preparationMinutes'] > 180 || d['ticket'] > 2147483647 ||
         d['createdAt'] is! Timestamp || d['firstItem'] is! Map ||
         ['studentUid','vendorUid','stallName','paymentMethod'].any((k) => d[k] is! String) ||
-        !simulatedPaymentMethods.containsKey(d['paymentMethod'])) throw const FormatException('Invalid confirmed order.');
+        !simulatedPaymentMethods.containsKey(d['paymentMethod'])) {
+          throw const FormatException('Invalid confirmed order.');
+        }
     return ConfirmedOrder(id: id, studentUid: d['studentUid'], vendorUid: d['vendorUid'], stallName: d['stallName'],
       ticket: d['ticket'], totalSen: d['totalSen'], itemCount: d['itemCount'], preparationMinutes: d['preparationMinutes'],
       paymentMethod: d['paymentMethod'], createdAt: d['createdAt'],

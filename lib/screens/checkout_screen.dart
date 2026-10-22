@@ -66,13 +66,19 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           if (saved != null) TextButton(onPressed: controller.busy || !controller.enabled ? null : () async {
             final confirmed = await confirmCartAction(context, 'Discard unconfirmed request?',
               'This checks the server first. A confirmed order cannot be cancelled; it will be recovered instead.', 'Check and Discard');
-            if (!mounted || !confirmed) return;
-            final result = await controller.discard();
-            if (!mounted) return;
-            if (result != null) { setState(() => _receipt = result); }
-            else if (controller.request == null) { Navigator.pop(context); }
+          if (!mounted || !context.mounted || !confirmed) return;
+
+          final result = await controller.discard();
+
+          if (!mounted || !context.mounted) return;
+
+          if (result != null) {
+            setState(() => _receipt = result);
+          } else if (controller.request == null) {
+            Navigator.pop(context);
+          }
           }, child: const Text('Safely Discard Request')),
         ],
-      ));
+      )));
     });
 }

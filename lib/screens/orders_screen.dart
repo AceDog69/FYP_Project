@@ -81,9 +81,17 @@ class _OrderItemsState extends State<_OrderItems> {
   }
   @override
   Widget build(BuildContext context) => StreamBuilder<MenuData<OrderItem>>(stream: _items, builder: (context, s) {
-    if (s.hasError) return TextButton(onPressed: () => setState(() => _items = widget.repository.items(widget.order)),
-      child: const Text('Unable to load items. Retry'));
-    if (!s.hasData) return const Text('Loading order items…');
+    if (s.hasError) {
+      return TextButton(
+        onPressed: () => setState(
+          () => _items = widget.repository.items(widget.order),
+        ),
+        child: const Text('Unable to load items. Retry'),
+      );
+    }
+    if (!s.hasData) {
+      return const Text('Loading order items…');
+    }
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       if (s.data!.cached) const Text('Cached item snapshots'),
       for (final item in s.data!.items) Padding(padding: const EdgeInsets.symmetric(vertical: 6), child: Row(children: [

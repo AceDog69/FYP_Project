@@ -62,7 +62,11 @@ class FakeOrderRepository extends OrderRepository {
     requests[request.id] = withState(request, 'cancelled'); emit(); return null;
   }
   void emit() => events.add(receipts.length);
-  Stream<MenuData<T>> _watch<T>(String target, List<T> Function() values) async* {
+  Stream<MenuData<T>> _watch<T>(String target, List<T> Function() values) =>
+    _watchSingle<T>(target, values).asBroadcastStream();
+
+  Stream<MenuData<T>> _watchSingle<T>(
+    String target, List<T> Function() values) async* {
     if (!loading) yield MenuData(values(), cached: cached);
     await for (final _ in events.stream) {
       if (streamError != null && errorTarget == target) { yield* Stream<MenuData<T>>.error(streamError!); }

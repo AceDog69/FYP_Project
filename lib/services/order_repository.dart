@@ -63,7 +63,7 @@ class FirebaseOrderRepository extends OrderRepository {
         if (saved.metadata.hasPendingWrites) {
           rethrow;
         }
-        final state = saved.exists ? saved.data()?['state'] : 'absent';
+        final state = saved.exists ? saved.data()!['state'] : 'absent';
         if (observed.state != null && state != observed.state &&
             (state == 'confirmed' || state == 'cancelled' || state == 'pending')) {
           continue;
@@ -91,7 +91,9 @@ class FirebaseOrderRepository extends OrderRepository {
     _guard(request); final uid = _uid;
     await _transaction<void>(request, (tx, observed) async {
       final ref = _request(uid, request.id), existing = await tx.get(_request(uid, request.id));
-      observed.state = existing.exists ? existing.data()?['state'] as String? : 'absent';
+      observed.state = existing.exists
+        ? (existing.data()!['state'] as String?)
+        : 'absent';
       _guard(request);
       if (!existing.exists) tx.set(ref, request.createMap());
     });
@@ -192,7 +194,9 @@ class FirebaseOrderRepository extends OrderRepository {
     _guard(request); final uid = _uid;
     final confirmed = await _transaction<bool>(request, (tx, observed) async {
       final ref = _request(uid, request.id), saved = await tx.get(_request(uid, request.id));
-      observed.state = saved.exists ? saved.data()?['state'] as String? : 'absent';
+      observed.state = saved.exists
+        ? (saved.data()!['state'] as String?)
+        : 'absent';
       _guard(request);
       if (!saved.exists) {
         // A terminal tombstone serializes with an interrupted prepare/submit.
