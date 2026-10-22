@@ -33,8 +33,9 @@ service cloud.firestore {
         && data.diff(resource.data).affectedKeys()
           .hasOnly(['name', 'category', 'preparationMinutes', 'status', 'pictureId', 'updatedAt']);
     }
-    // Safety gate: do not enable destructive menu writes before emulator proof
-    // and review. Category deletion remains denied even when this gate changes.
+    // Keep false until the candidate paired-deletion tests pass and are reviewed.
+    // The security suite opens ONLY this gate in its in-memory emulator rules,
+    // and separately tests that this checked-in version still blocks deletion.
     function menuDeletesEnabled() { return false; }
     function categoryPath(uid, id) {
       return /databases/$(database)/documents/stalls/$(uid)/menuCategories/$(id);
@@ -76,6 +77,22 @@ service cloud.firestore {
       return getAfter(categoryPath(uid, categoryId)).data.vendorUid == uid
         && getAfter(membershipPath(uid, id)).data.vendorUid == uid
         && getAfter(membershipPath(uid, id)).data.categoryId == categoryId;
+    }
+    // Both documents must exist and agree BEFORE deletion, and both must be
+    // absent AFTER the atomic request. An orphan is not client-repairable.
+    // Category deletion remains unconditionally denied; this does not prove
+    // that a category is empty. App Food Delete stays gated pending execution
+    // of the security suite. These rules have not been deployed.
+    function pairedFoodDeletion(uid, id) {
+      let food = get(foodPath(uid, id)).data;
+      let membership = get(membershipPath(uid, id)).data;
+      return food.vendorUid == uid && membership.vendorUid == uid
+        && membership.keys().hasAll(['vendorUid', 'categoryId'])
+        && membership.keys().hasOnly(['vendorUid', 'categoryId'])
+        && food.categoryId == membership.categoryId
+        && get(categoryPath(uid, food.categoryId)).data.vendorUid == uid
+        && !existsAfter(foodPath(uid, id))
+        && !existsAfter(membershipPath(uid, id));
     }
     function validProfile(data, uid) {
       return data.keys().hasAll(['uid', 'fullName', 'email', 'phoneNumber', 'role', 'createdAt', 'stallSetupComplete', 'stallId'])
@@ -162,7 +179,7 @@ service cloud.firestore {
           && request.resource.data.revision == resource.data.revision + 1
           && linkedFood(stallId, foodId, request.resource.data.categoryId);
         allow delete: if menuDeletesEnabled() && configuredVendor(stallId)
-          && !existsAfter(membershipPath(stallId, foodId));
+          && pairedFoodDeletion(stallId, foodId);
       }
       match /menuMemberships/{foodId} {
         allow read: if configuredVendor(stallId);
@@ -177,7 +194,7 @@ service cloud.firestore {
           && getAfter(foodPath(stallId, foodId)).data.categoryId == request.resource.data.categoryId
           && getAfter(categoryPath(stallId, request.resource.data.categoryId)).data.vendorUid == stallId;
         allow delete: if menuDeletesEnabled() && configuredVendor(stallId)
-          && !existsAfter(foodPath(stallId, foodId));
+          && pairedFoodDeletion(stallId, foodId);
       }
     }
     match /{document=**} { allow read, write: if false; }

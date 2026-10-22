@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:my_fyp_app/models/vendor_menu.dart';
@@ -71,6 +72,42 @@ void main() {
     await tester.pumpWidget(MaterialApp(home: Scaffold(body: Builder(builder: (context) =>
       TextButton(onPressed: () async { answer = await confirmDeletion(context, 'Rice'); }, child: const Text('Ask'))))));
     await stage.tap(tester, 'Ask'); await stage.tap(tester, 'Cancel'); expect(answer, false);
+  });
+
+  testWidgets('food delete Cancel writes nothing; pending, failure and retry keep server semantics', (tester) async {
+    final repo = stage.TestRepository()..session(stage.profile(AccountRole.vendor, setup: true));
+    addTearDown(repo.dispose);
+    final menu = repo.menuRepository..deletesEnabled = true;
+    menu.categoryItems.add(const MenuCategory('rice', 'Rice', 1));
+    menu.foodItems.add(MenuFood('food', FoodDraft(name: 'Rice Bowl', description: 'Fresh rice',
+      priceSen: 850, categoryId: 'rice', pictureId: 'nasi_lemak', available: false), 1));
+    await stage.launch(tester, repo);
+    await tester.binding.setSurfaceSize(const Size(412, 915));
+    await stage.tap(tester, 'Menu');
+    final button = find.widgetWithText(OutlinedButton, 'Delete Food');
+    await tester.ensureVisible(button); await tester.tap(button); await tester.pumpAndSettle();
+    await stage.tap(tester, 'Cancel');
+    expect(menu.deletes, 0); expect(menu.foodItems, hasLength(1));
+    expect(find.text('Rice Bowl'), findsOneWidget);
+
+    menu.pending = Completer<void>();
+    menu.error = const AccountException('Delete failed. Please retry.');
+    await tester.ensureVisible(button); await tester.tap(button); await tester.pumpAndSettle();
+    final confirm = find.widgetWithText(TextButton, 'Delete Food');
+    await tester.tap(confirm); await tester.pump();
+    expect(menu.deletes, 1); expect(menu.foodItems, hasLength(1));
+    expect(tester.widget<OutlinedButton>(button).onPressed, isNull);
+    expect(find.text('Food deleted.'), findsNothing);
+    menu.pending!.complete(); await tester.pumpAndSettle();
+    expect(find.text('Delete failed. Please retry.'), findsOneWidget);
+    expect(find.text('Rice Bowl'), findsOneWidget);
+
+    menu.pending = null; menu.error = null;
+    await tester.ensureVisible(button); await tester.tap(button); await tester.pumpAndSettle();
+    await stage.tap(tester, 'Delete Food');
+    expect(menu.deletes, 2); expect(menu.foodItems, isEmpty);
+    expect(find.text('No food items yet'), findsOneWidget);
+    expect(find.text('Food deleted.'), findsOneWidget);
   });
 
   testWidgets('edit changes category and price; availability stays visible and Delete is gated', (tester) async {

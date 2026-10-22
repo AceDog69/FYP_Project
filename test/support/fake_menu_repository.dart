@@ -13,6 +13,10 @@ class FakeMenuRepository extends VendorMenuRepository {
   Object? error;
   Completer<void>? pending;
   int saves = 0;
+  int deletes = 0;
+  bool deletesEnabled = false;
+  @override
+  bool get canDeleteFood => deletesEnabled;
   @override
   Stream<MenuData<MenuCategory>> categories() async* {
     if (!loading) yield MenuData(List.of(categoryItems), cached: cached);
@@ -51,6 +55,16 @@ class FakeMenuRepository extends VendorMenuRepository {
     name: f.draft.name, description: f.draft.description, priceSen: f.draft.priceSen,
     categoryId: f.draft.categoryId, pictureId: f.draft.pictureId, available: available), original: f);
   @override
-  Future<void> deleteFood(MenuFood food) async => throw const AccountException('Deletion gated.');
+  Future<void> deleteFood(MenuFood food) async {
+    if (!canDeleteFood) throw const AccountException('Deletion gated.');
+    deletes++;
+    if (pending != null) await pending!.future;
+    if (error != null) throw error!;
+    if (!foodItems.any((f) => f.id == food.id && f.revision == food.revision)) {
+      throw const AccountException('This item changed. Reload the menu.');
+    }
+    foodItems.removeWhere((f) => f.id == food.id);
+    emit();
+  }
   void dispose() { categoryEvents.close(); foodEvents.close(); }
 }

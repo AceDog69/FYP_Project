@@ -2,6 +2,9 @@
 
 Updated 22 October 2026 (Asia/Singapore). Supervisor meeting: 28 October 2026.
 
+**Latest state:** the finalization section at the end supersedes the historical
+checkpoint limitations/results below. Both destructive actions remain gated.
+
 ## Milestones and source
 
 | Milestone | Commit / state |
@@ -367,3 +370,64 @@ resolved or explicitly scoped by review. Stage 2B browsing/read rules, Stage 2C
 Cart/checkout/immutable order snapshots, and Stage 3 queue/FCFS/ETA/in-app Ready
 notifications remain unimplemented. No merge, deployment, billing change or
 production migration is part of this work.
+
+## Stage 2A-03 finalization — deletion preparation, still gated
+
+Exact existing branch HEAD verified through the connected GitHub integration
+before edits: `14a9ff6f0885de8cb47b26f18efbd9a8580b920d`. Imported that exact
+commit, including the user's non-null fake repository fix; no rebuild or rebase.
+
+User-reported Windows acceptance at that base: **37/37 Flutter tests**, **28/28
+`npm run test:menu` tests**, core Vendor Menu Pixel 6 acceptance, and analysis with
+zero errors/warnings plus four informational lints. These are user results for
+the base, not fresh results for the finalization. Earlier Stage 2A-02 acceptance
+and the incomplete Chrome/Dart browser test remain recorded above.
+
+Prepared stronger Food Delete authorization: before-state owner/category/canonical
+membership checks plus atomic absence of both documents after deletion. The real
+transaction verifies the displayed revision, reads membership/category before any
+write, and deletes only the selected food/membership. UI preparation handles
+Cancel, repeated taps, pending server confirmation, errors retaining data and
+success feedback. **Food Delete stays disabled in both the real repository and
+checked-in rules**, pending actual passing security tests and review.
+
+The security suite opens only the food gate in an in-memory emulator rules copy
+to test the candidate; a separate test uses the unchanged checked-in closed gate.
+There are now 18 menu security cases, including authorized/unavailable deletion,
+single/orphan/wrong/foreign pair denial, stale/repeated attempts, edit/delete and
+reassignment/delete races, forged counters/revisions/names/timestamps, role attacks,
+category-delete races and order namespace isolation. No order document fixture or
+workflow is created. One additional Flutter widget test covers Delete Cancel,
+pending/failure/retry/success through a test-only fake. These cases are unexecuted.
+
+**Category Delete stays disabled unconditionally**, including empty categories.
+The current canonical reference cannot prove zero category references. No count,
+witness schema, migration or reservation cleanup permission is introduced.
+[Deletion review](stage_2a_03_deletion_review.md) records the invariant, operation
+read/write sets, counter/witness requirements, serialization, unavailable foods,
+existing-data compatibility, static budget review and exact Windows commands.
+P0-C positive Category Delete proof remains **not reproduced**. Closed-gate races
+are not positive emptiness proof. Write-authorization estimate: six access calls
+per deletion, twelve for the pair before caching; runtime accesses and expression
+counts remain unmeasured.
+
+Applied precisely the four supplied informational-lint fixes in Dashboard, Menu
+(two sites) and profile widgets. Analysis has not rerun successfully here, so a
+clean analyzer result is pending. Dashboard/Profile behavior is unchanged by those
+syntax-only edits. Authentication, Stall Setup, Stage 2A-02 operations, Student
+screens, all 23 PNGs, dependencies, Firebase configuration, debug HTTP/emulator
+entry and Windows launcher are preserved.
+
+Actual finalization commands: `flutter analyze` and `flutter test` each stop before
+analysis/testing with Dart SDK bootstrap `Failed to connect to proxy port 8080`,
+exit 7. `npm run test:menu` stops with `firebase: not found`, exit 127. Node syntax
+checks of all three security modules and `git diff --check` pass. **Zero functional
+or security tests executed here; no security/race proof claimed.** No Android
+build/acceptance here. No production rules deployment or data/billing change.
+
+Run the Windows commands and gated-control Pixel 6 checklist in the linked review.
+Successful candidate tests require review before enabling Food Delete; category
+deletion needs its own proven design. Preserve the verified remote backup and
+resume from its exact SHA (reported in final chat / branch history). Do not
+restart from Stage 1. Stage 2B browsing, Stage 2C Cart/checkout/immutable order
+snapshots and Stage 3 queue/FCFS/ETA/notifications remain pending; none are started.

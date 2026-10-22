@@ -3,6 +3,8 @@ import '../models/vendor_menu.dart';
 import 'auth_repository.dart';
 
 abstract class VendorMenuRepository {
+  // Enable in the Firebase implementation only after the paired-deletion
+  // security tests have actually passed and been reviewed. No runtime override.
   bool get canDeleteFood => false;
   Stream<MenuData<MenuCategory>> categories();
   Stream<MenuData<MenuFood>> foods();
@@ -125,9 +127,24 @@ class FirebaseVendorMenuRepository extends VendorMenuRepository {
     }
     await _transaction((tx, uid) async {
       final ref = _root(uid).collection('menuFoods').doc(food.id);
-      _version(await tx.get(ref), food.revision);
+      final existing = await tx.get(ref);
+      _version(existing, food.revision);
+      final membershipRef = _root(uid).collection('menuMemberships').doc(food.id);
+      final membership = await tx.get(membershipRef);
+      final categoryId = existing.data()?['categoryId'];
+      if (existing.data()?['vendorUid'] != uid || categoryId != food.draft.categoryId ||
+          membership.data()?['vendorUid'] != uid || membership.data()?['categoryId'] != categoryId) {
+        throw const AccountException('Food membership could not be verified. Reload the menu.');
+      }
+      final category = await tx.get(_root(uid).collection('menuCategories').doc(food.draft.categoryId));
+      if (category.data()?['vendorUid'] != uid) {
+        throw const AccountException('The food category could not be verified. Reload the menu.');
+      }
+      // Reading both documents makes concurrent edits/reassignment/deletion
+      // retry and recheck the displayed revision before any delete is committed.
+      // No order path is read or written; future orders need immutable snapshots.
       tx.delete(ref);
-      tx.delete(_root(uid).collection('menuMemberships').doc(food.id));
+      tx.delete(membershipRef);
     });
   }
 }

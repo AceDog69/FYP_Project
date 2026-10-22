@@ -39,7 +39,7 @@ class VendorSection extends StatelessWidget {
     child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       Row(children: [
         Expanded(child: Text(title, style: Theme.of(context).textTheme.titleLarge)),
-        if (action != null) action!,
+        ?action,
       ]),
       const SizedBox(height: 16), ...children,
     ]),

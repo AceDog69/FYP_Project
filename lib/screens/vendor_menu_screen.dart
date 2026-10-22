@@ -21,6 +21,7 @@ class _VendorMenuScreenState extends State<VendorMenuScreen> {
   late Stream<MenuData<MenuFood>>? _foods;
   late Stream<VendorStall> _stall;
   bool _busy = false;
+  bool _confirmingDelete = false;
   String? _error;
   VendorMenuRepository? get _repo => widget.auth.menuRepository;
   @override
@@ -39,8 +40,30 @@ class _VendorMenuScreenState extends State<VendorMenuScreen> {
   Future<void> _editor(List<MenuCategory> categories, String stall, [MenuFood? food]) async {
     final saved = await Navigator.push<bool>(context, MaterialPageRoute(builder: (_) =>
       VendorFoodEditor(repository: _repo!, categories: categories, stallName: stall, original: food)));
-    if (mounted && saved == true) ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Food saved.')));
+    if (mounted && saved == true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Food saved.')));
+    }
+  }
+  Future<void> _delete(MenuFood food) async {
+    final repository = _repo;
+    if (_busy || _confirmingDelete || repository == null || !repository.canDeleteFood) return;
+    // Lock before opening the dialog as well as while awaiting the server.
+    setState(() { _confirmingDelete = true; _error = null; });
+    try {
+      final confirmed = await confirmDeletion(context, food.draft.name);
+      if (!mounted || !confirmed) return;
+      setState(() { _confirmingDelete = false; _busy = true; });
+      await repository.deleteFood(food);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Food deleted.')));
+      }
+    } catch (e) {
+      if (mounted) setState(() => _error = menuError(e));
+    } finally {
+      if (mounted) setState(() { _busy = false; _confirmingDelete = false; });
+    }
   }
 
   @override
@@ -54,7 +77,7 @@ class _VendorMenuScreenState extends State<VendorMenuScreen> {
             cats.connectionState == ConnectionState.waiting || foods.connectionState == ConnectionState.waiting);
           final categories = cats.data?.items ?? <MenuCategory>[];
           final cached = stall.data?.isCached != false || cats.data?.cached != false || foods.data?.cached != false;
-          final safe = !failed && !loading && !cached && !_busy;
+          final safe = !failed && !loading && !cached && !_busy && !_confirmingDelete;
           final stallName = !stall.hasError ? stall.data?.name : null;
           return ListView(padding: const EdgeInsets.all(20), children: [
             Container(padding: const EdgeInsets.all(20), decoration: BoxDecoration(color: primaryOrange,
@@ -82,7 +105,9 @@ class _VendorMenuScreenState extends State<VendorMenuScreen> {
                 const Padding(padding: EdgeInsets.symmetric(vertical: 32), child: Text('No food items yet',
                   textAlign: TextAlign.center, style: TextStyle(fontSize: 20))),
               ],
-              const Text('Deletion awaits reviewed local security tests.', style: TextStyle(color: mutedText)),
+              if (!_repo!.canDeleteFood)
+                const Text('Food deletion is unavailable until security testing is complete.',
+                  style: TextStyle(color: mutedText)),
               for (final food in foods.data!.items) Card(child: Padding(padding: const EdgeInsets.all(16),
                 child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
                   Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -100,11 +125,8 @@ class _VendorMenuScreenState extends State<VendorMenuScreen> {
                   Wrap(spacing: 12, children: [
                     OutlinedButton(onPressed: safe ? () => _editor(categories, stallName ?? '', food) : null,
                       child: const Text('Edit')),
-                    OutlinedButton(onPressed: safe && _repo!.canDeleteFood ? () async {
-                      if (await confirmDeletion(context, food.draft.name)) {
-                        await _action(() => _repo!.deleteFood(food));
-                      }
-                    } : null, child: const Text('Delete Food')),
+                    OutlinedButton(onPressed: safe && _repo!.canDeleteFood ? () => _delete(food) : null,
+                      child: const Text('Delete Food')),
                   ]),
                 ]))),
             ],
@@ -130,14 +152,16 @@ class _MenuCategoriesScreenState extends State<MenuCategoriesScreen> {
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(backgroundColor: primaryOrange, foregroundColor: Colors.white, title: const Text('Manage Categories')),
     body: StreamBuilder<MenuData<MenuCategory>>(stream: _categories, builder: (context, s) {
-      if (s.hasError) return Center(child: TextButton(onPressed: () => setState(() =>
-        _categories = widget.repository.categories()), child: const Text('Unable to load categories. Retry')));
+      if (s.hasError) {
+        return Center(child: TextButton(onPressed: () => setState(() =>
+          _categories = widget.repository.categories()), child: const Text('Unable to load categories. Retry')));
+      }
       if (!s.hasData) return const Center(child: CircularProgressIndicator());
       return ListView(padding: const EdgeInsets.all(20), children: [
         if (s.data!.cached) const Text('Cached categories — connect to make changes.'),
         FilledButton(onPressed: s.data!.cached ? null : () => _edit(), child: const Text('Add Category')),
         const SizedBox(height: 16),
-        const Text('Category deletion is blocked until membership and deletion races are proven in local security tests.'),
+        const Text('Category deletion is unavailable because empty categories cannot yet be verified securely.'),
         for (final c in s.data!.items) Card(child: Padding(padding: const EdgeInsets.all(12), child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch, children: [Text(c.name), Wrap(spacing: 12, children: [
             TextButton(onPressed: s.data!.cached ? null : () => _edit(c), child: const Text('Edit')),

@@ -31,8 +31,10 @@ class _VendorDashboardState extends State<VendorDashboard> {
     setState(() { _busy = true; _error = null; });
     try {
       await widget.repository.setStallOpen(!stall.isOpen);
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(stall.isOpen ? 'Stall closed.' : 'Stall opened.')));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(stall.isOpen ? 'Stall closed.' : 'Stall opened.')));
+      }
     } catch (error) {
       if (mounted) setState(() => _error = friendlyError(error));
     } finally {
