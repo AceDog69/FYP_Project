@@ -597,3 +597,55 @@ Stable-input permission failures propagate; same submission ID is always retaine
 Checkout Rules and real `canCheckout` remain false; both Vendor deletion gates
 remain closed. Emulator tests, isolation/offline repairs and final documentation
 are pending at this intermediate checkpoint. No feature batch, migration or deploy.
+
+### Stage 2C focused security repair — final source, proof pending
+
+Core backup verified on GitHub before test work:
+`87b8d45fbc8561cee0ea2597cdae6d8a87d4cad2`. Continue on the same
+`feature/stage-2c-checkout-orders` branch. Final verified SHA is in the final
+report/GitHub history; resume from it rather than rebuilding. Main is unchanged.
+
+Rules now validate each canonical snapshot once at its creating document, require
+all bounded child slots, and bind the header total to the immutable, sum-validated
+draft. Exact canonical map equality/diffs preserve all field/ownership/price/
+availability/category/membership checks. Four products and the existing schema
+remain supported by the source. No production migration is needed. The inductive
+child/total invariant, unchanged static access estimate at the limit and remaining
+unmeasured runtime budget are documented in the Stage 2C handover. This is a
+candidate repair; fitting the 1,000-expression ceiling has NOT been proven here.
+
+Client/helper contention recovery is bounded and requires server-observed changed
+state/counter before retrying permission errors. Stable-input permission failures
+still fail; same identity and server receipt requirements remain. Fresh demo
+databases isolate each test; all parallel operations settle before reporting
+failures and both race outcomes are checked. No checkout `clearFirestore()` race
+remains. Actual RPC disconnection replaces the invalid read-only offline assertion.
+Connectivity failure is required and independent server checks prove no order or
+ticket. Android offline behavior remains untested.
+
+The combined runner retains the earlier 46 cases unchanged and contains **23
+checkout cases: 69 total expected, not executed here**. Added maximum-size direct
+attacks at every slot, canonical category/membership corruption, detached/extra
+child protection and stable-permission-error checks. Parallel same-ID/Students
+and discard races now exercise four products. The wrapper fails on emulator/client
+expression/access exhaustion even when a negative assertion gets permission-denied;
+missing/empty debug-log evidence also fails. Raw coverage and diagnostic artifacts
+are ignored, not pushed or represented as measured expression counts.
+
+Actual Codex checks: diagnostic unit test **1/1 passed** (six assertions), all 11
+Firebase `.mjs` syntax checks passed, Git whitespace checks passed. Four earlier
+security modules and protected app/config/assets outside the checkout repository
+are unchanged from the starting HEAD. Flutter/Dart SDK, Firebase CLI and Node
+dependencies are unavailable; no runtime Rules/Flutter suite, compilation or
+Android acceptance was run and no download was retried. Historical Windows
+results remain analyzer clean / Flutter **63/63** / old security **58/65**, with
+the seven failures recorded above. They are not passes for this revision.
+
+[Updated Stage 2C Windows/Pixel 6 instructions](stage_2c_checkout_orders.md)
+include `npm ci`, `node checkout_budget.test.mjs`, `npm run test:checkout`, log/
+coverage evidence, Flutter checks and gated-build acceptance. All **69 security
+cases plus the budget guard must pass locally** before security proof can be
+reviewed. Both checkout gates and both Vendor deletion gates remain disabled.
+No Firebase deployment/data change, merge, SDK/dependency version change or new
+feature is included. Stop for review; Stage 3 queue/FCFS/ETA/notifications remain
+pending separately, and the historical Chrome/Dart loading gap remains open.

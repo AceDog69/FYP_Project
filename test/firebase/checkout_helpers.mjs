@@ -85,10 +85,13 @@ export async function checkoutTransaction(db,uid,id,vendorUid,action,{maxAttempt
     } catch(error) {
       if(error.code!=='permission-denied'||attempt===4) throw error;
       const saved=await getDocFromServer(requestRef(db,uid,id));
+      if(saved.metadata.hasPendingWrites) throw error;
       const state=saved.exists()?saved.data().state:'absent';
       if(observed.state!==undefined&&state!==observed.state&&['confirmed','cancelled','pending'].includes(state)) continue;
       if(state==='pending'&&observed.ticket!==undefined) {
-        const current=(await getDocFromServer(counterRef(db,vendorUid))).data()?.lastTicket??0;
+        const counter=await getDocFromServer(counterRef(db,vendorUid));
+        if(counter.metadata.hasPendingWrites) throw error;
+        const current=counter.data()?.lastTicket??0;
         if(Number.isInteger(current)&&current>observed.ticket) continue;
       }
       throw error;
@@ -105,7 +108,9 @@ export async function submit(db,uid,id,vendorUid='vendor',options={}) {
     const p=await payload(db,q,ref=>tx.get(ref));observed.ticket=p.counter.lastTicket-1;
     writePayload(tx,db,p);
   },options);
-  return (await getDocFromServer(orderRef(db,id))).data();
+  const order=await getDocFromServer(orderRef(db,id));
+  if(order.metadata.hasPendingWrites) throw new Error('Order is awaiting server confirmation');
+  return order.data();
 }
 export function discard(db,q) {
   return checkoutTransaction(db,q.studentUid,q.submissionId,q.vendorUid,async(tx,observed)=>{

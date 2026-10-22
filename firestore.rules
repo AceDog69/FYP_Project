@@ -105,8 +105,7 @@ service cloud.firestore {
     function matchesDraft(i, expected) {
       // The durable draft has exactly eight validated, immutable fields. Only
       // these two additions may differ: removals/extra fields also appear in diff.
-      return i.diff(expected).affectedKeys().hasOnly(['categoryName','subtotalSen'])
-        && i.subtotalSen == draftSubtotal(expected);
+      return i.diff(expected).affectedKeys().hasOnly(['categoryName','subtotalSen']);
     }
     function validOrderItem(i, expected, vendorUid) {
       let food = get(foodPath(vendorUid, i.foodId)).data;
@@ -134,9 +133,9 @@ service cloud.firestore {
       let intent = getAfter(requestPath(request.auth.uid, id)).data;
       let stall = get(/databases/$(database)/documents/stalls/$(d.vendorUid)).data;
       let counter = getAfter(counterPath(d.vendorUid)).data;
-      let second = d.itemCount > 1 ? getAfter(orderItemPath(id, '1')).data : null;
-      let third = d.itemCount > 2 ? getAfter(orderItemPath(id, '2')).data : null;
-      let fourth = d.itemCount > 3 ? getAfter(orderItemPath(id, '3')).data : null;
+      let second = d.itemCount < 2 || existsAfter(orderItemPath(id, '1'));
+      let third = d.itemCount < 3 || existsAfter(orderItemPath(id, '2'));
+      let fourth = d.itemCount < 4 || existsAfter(orderItemPath(id, '3'));
       return d == {'schemaVersion':1, 'orderId':id, 'submissionId':id, 'studentUid':request.auth.uid,
           'vendorUid':intent.vendorUid, 'stallName':stall.name, 'preparationMinutes':stall.preparationMinutes,
           'ticket':counter.lastTicket, 'itemCount':intent.items.size(), 'totalSen':intent.totalSen,
@@ -145,18 +144,17 @@ service cloud.firestore {
         && intent.state == 'confirmed' && intent.submissionId == id && intent.studentUid == request.auth.uid
         && d.stallName == intent.stallName
         && stall.ownerUid == d.vendorUid && stall.status == 'open'
-        && d.preparationMinutes == stall.preparationMinutes
         && d.preparationMinutes is int && d.preparationMinutes >= 1 && d.preparationMinutes <= 180
         // Count/total/payment bounds originate in the immutable prepared draft.
         && d.itemCount is int && d.totalSen is int && d.ticket is int && d.ticket >= 1
         && counter.vendorUid == d.vendorUid && counter.lastOrderId == id
         && validOrderItem(d.firstItem, intent.items[0], d.vendorUid)
-        && (d.itemCount < 2 || matchesDraft(second, intent.items[1]))
-        && (d.itemCount < 3 || matchesDraft(third, intent.items[2]))
-        && (d.itemCount < 4 || matchesDraft(fourth, intent.items[3]))
-        && d.totalSen == d.firstItem.subtotalSen
-          + (d.itemCount > 1 ? second.subtotalSen : 0) + (d.itemCount > 2 ? third.subtotalSen : 0)
-          + (d.itemCount > 3 ? fourth.subtotalSen : 0);
+        // A child cannot pre-exist its header: its own create rule requires
+        // that same header, slot, request and canonical snapshot. Require every
+        // slot here; validate each child's snapshot ONCE in its own create rule.
+        // Prepared total == sum(draft price * quantity), immutable thereafter;
+        // each canonical snapshot equals that slot's draft and exact subtotal.
+        && second && third && fourth;
     }
     function validCounter(d, uid) {
       let order = getAfter(orderPath(d.lastOrderId)).data;

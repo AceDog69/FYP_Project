@@ -4,7 +4,7 @@ Required base verified through GitHub: `7ba35a219b5f3267d1b95941265a7166cc70b024
 the user's latest Stage 2B verification-fix commit. Branch:
 `feature/stage-2c-checkout-orders`. No main update, deployment or Stage 3 work.
 
-## Core checkpoint
+## Original core checkpoint (historical)
 
 Core schema, proposed Rules validation and Firestore transaction/recovery service
 are implemented. **Checkout writes and real-client confirmation remain disabled**
@@ -30,9 +30,9 @@ snapshots; they are not confirmed orders. Confirmed orders are immutable Pending
 records. No Ready/Preparing/Completed/Cancelled **order** transition exists.
 
 The first item lives in the header to keep bounded verification below the
-per-write access ceiling. Header validates that item canonically, all remaining
-item after-states, total, authenticated Student, canonical Open stall, matching
-request and counter. Each remaining item's own create rule validates canonical
+per-write access ceiling. Header validates that item canonically, requires every remaining
+item after-state, and binds the total, authenticated Student, canonical Open stall,
+immutable request and counter. Each remaining item's own create rule validates canonical
 food/category/membership and the request. Header count requires every slot; child
 rules forbid extra slots. Draft IDs are distinct and immutable, preventing duplicate
 foods or mixed stalls. Food availability, ownership, name/description/picture,
@@ -77,34 +77,60 @@ Network failure in that final read remains an unknown result requiring same-ID
 recovery. Persistent pending requests support recovery after an app restart; confirmed
 orders remain in Student Orders even when the in-memory Cart has disappeared.
 
-## Budget / proof status
+## Budget / proof status — focused repair
 
-**Static design estimate, not runtime evidence:** a worst-case four-item order in
-four distinct categories needs 12 canonical item documents (four each of food,
-category and membership), Student profile, canonical stall, request after-state,
-counter after-state, header after-state and three child after-states: 20 distinct
-document-state lookups across the atomic request, assuming repeated identical
-lookups are cached. Header authorization has ten access invocations including the
-Student check; each child uses header/request and three canonical documents.
-Document access is therefore at the documented limits, not a comfortable margin.
-Actual Rules cache/access and 1000-expression-budget behavior must be measured with
-the four-distinct-category case, adversarial batches and races. No runtime budget,
-rule compilation, successful security case or safe-checkout proof is claimed here.
-Any limit failure must be fixed architecturally, not by weakening validation.
+The original static estimate did **not** establish feasibility: the user's Windows
+run at `001555044cabb2ffad3f1e0c0b72961ede40e7c4` actually exhausted the
+1,000-expression limit for three/four products and malformed batches. It also
+reported contention, race cleanup and offline assertion failures. No claim that
+the old design fits the Rules budget remains valid.
 
-This is a **write-authorization estimate only**, not a measured full-transaction
-budget. Client transaction reads have separate authorization evaluations (including
-Student profile/public-listing checks). Their interaction with transaction-wide
-quotas and cache reuse must also be checked in the emulator. Student menu/counter
-read branches now check the Student condition first to avoid unnecessary lookup
-of a Vendor profile during a permitted Student read; the permission sets are unchanged.
-Exact access and expression counts have not been established. Consequently this
-candidate cannot be declared safe or enabled based on these estimates.
+The repair retains the bounded schema and four distinct products. It reduces
+repeated evaluation rather than trusting client data:
 
-The checked-in `checkoutWritesEnabled()` and real repository `canCheckout` are
-false. Both previous Vendor delete gates are unchanged. Pending request/order/counter
-write rules are gated together. No paid Firebase service, production data change,
-migration, billing change or deployment is part of this work.
+1. Preparation still enforces the exact eight-field draft item shape, all bounds,
+   distinct IDs and the integer sum. Confirmation cannot change those fields.
+2. Each snapshot uses a map diff to bind every draft field, and exact map equality
+   against canonical food and category data to bind the entire ten-field shape,
+   revision, picture, price, quantity and computed subtotal. Integer types remain
+   explicit. Food owner/availability, category owner/name/nameKey/revision/timestamps
+   and exact two-field membership are still checked. Missing sources fail closed.
+3. The header validates its inline first item, requires slots 1–3 when applicable,
+   and equals an exact canonical header map, including immutable draft total.
+   Each child is validated canonically **once in its own create rule**. That rule
+   binds the parent, owner, current creation time, slot and matching draft. It
+   cannot create an orphan or extra slot; headers/items cannot be changed/deleted.
+   Consequently every required child is a validated snapshot of its unique draft
+   slot, each subtotal equals its unit price times quantity, and the header total
+   equals their sum via the immutable prepared sum. Recomputing the same checks
+   in the header is unnecessary. This inductive invariant assumes data written
+   through these rules, not arbitrary privileged/Admin-created corrupt orders.
+   Tests explicitly reject detached/extra children and exercise reversed write order.
+4. Counter/header exact maps and helpers bind after-state maps once. Ticket 1,
+   increments of exactly 1, upper bounds, owner, linked order and immutable fields
+   remain protected. No separate ticket reservation can consume a ticket.
+
+The four-distinct-category write authorization still has a conservative static
+estimate of ten header accesses and twenty distinct document states overall,
+**assuming cache reuse**: twelve item source documents, profile, raw stall,
+request-after, counter-after, header-after and three child existence-after states.
+No lookup or expression total is measured here; transaction read authorization
+also needs runtime verification. This repair is a candidate, not proven to fit.
+Do not enable it until the entire local runner passes with no budget diagnostics.
+
+`npm run test:checkout` now runs through `run_checkout_tests.mjs`. It preserves
+all earlier 46 cases, captures client output and checks new Firestore debug-log
+bytes for expression/access exhaustion. A missing/empty debug log fails verification.
+Thus an `assertFails` that merely encounters the budget ceiling cannot produce
+successful suite proof. Checkout negative assertions additionally require
+`permission-denied`, reject budget text, and have maximum-size positive controls.
+Raw per-case coverage and a budget diagnostic summary are ignored artifacts, not
+fabricated per-request measurements. A clean log alone is not proof: all positive,
+negative and concurrency assertions must also pass. Coverage absence is reported.
+
+Checked-in `checkoutWritesEnabled()` and real repository `canCheckout` remain
+false. Both Vendor delete gates are unchanged. No deployment, migration, billing
+change or paid service is introduced.
 
 ## UI, lifecycle and local acceptance status
 
@@ -159,7 +185,7 @@ Vendor live inbox, logout, loading/cache/error/Retry. Previous tests now expect 
 functional Orders empty state and disabled **Confirm Order** on the review screen.
 They retain Vendor/auth/Student Cart behavior assertions and all user fixes.
 
-`checkout_orders.test.mjs` registers **19 security cases** (four positive item-count
+`checkout_orders.test.mjs` registers **23 security cases** (four positive item-count
 cases are generated by a loop). It includes four distinct categories at the maximum
 size, malicious draft/snapshot/price/total/timestamp/ownership changes, missing child/
 request/counter writes, fifth/duplicate/quantity bounds, Closed/unavailable/mixed
@@ -172,19 +198,19 @@ batches. Unconfirmed draft snapshots are permitted but must independently pass
 canonical validation when promoted to orders.
 
 `npm run test:checkout` runs all five security modules sequentially: Stage 1,
-Vendor Operations, Vendor Menu, Student Catalog and Checkout (65 registered cases,
-**not observed passes**). Original Vendor deletion gates stay closed. The historical
+Vendor Operations, Vendor Menu, Student Catalog and Checkout (**69 registered cases,
+not executed in Codex**). Original Vendor deletion gates stay closed. The historical
 menu candidate proof still opens only its own in-memory food gate. Checkout proof
 opens only the checkout gate and separately checks the unchanged gated rules.
 
 After an emulator run, the new suite attempts to save raw Rules coverage to
-`test/firebase/artifacts/checkout-rule-coverage.json` (gitignored). This aggregate
+`test/firebase/artifacts/checkout-rule-coverage-<case>.json` (gitignored). This aggregate
 report is not a measured per-write access count or automatic proof of the 1000-
-expression ceiling. Review its executed branches and emulator errors, especially
+expression ceiling. Review the per-case executed branches and emulator errors, especially
 the four-distinct-category transaction. Missing coverage is reported, not replaced
 with fabricated counts. Any candidate failure keeps confirmation disabled.
 
-Actual Codex verification, 22 October 2026 (Asia/Singapore):
+Original implementation Codex verification (historical, before the user Windows run):
 
 | Check | Observed result |
 | --- | --- |
@@ -195,7 +221,7 @@ Actual Codex verification, 22 October 2026 (Asia/Singapore):
 | `git diff --check` | Passed |
 | 42 protected source/config/test/assets compared byte-for-byte with `7ba35a2` | Passed, including all 23 PNGs and retained Stage 2B fixes |
 
-**Zero new Flutter/security cases executed.** New Dart and Rules are uncompiled,
+**Zero new Flutter/security cases executed in that original Codex run.** New Dart and Rules were uncompiled,
 Android acceptance is pending, no race or ticket proof is reproduced, and document-
 access/expression limits are unmeasured. User-reported base acceptance: Flutter
 tests/analyzer passed, 46/46 security tests and core Pixel 6 browsing/Cart acceptance;
@@ -210,18 +236,21 @@ From a clean working tree:
 
 ```powershell
 git fetch origin
-git switch --track origin/feature/stage-2c-checkout-orders
+git switch feature/stage-2c-checkout-orders
+git pull --ff-only
 git rev-parse HEAD
 flutter pub get --enforce-lockfile
 flutter analyze
 flutter test
 Push-Location test/firebase
 npm ci
+node checkout_budget.test.mjs
 npm run test:checkout
 Pop-Location
 ```
 
-If the branch exists locally, switch to it and `git pull --ff-only`; stop on
+If the branch does not exist locally, use `git switch --track
+origin/feature/stage-2c-checkout-orders` instead of the switch/pull lines. Stop on
 divergence. Stop prior emulator processes before npm runners. Preserve the output
 and coverage artifact. No rule deployment is needed for these local demo tests.
 Do not flip either gate merely to make a demonstration work; share passing proof
@@ -307,3 +336,72 @@ Stable-input permission failures propagate; same submission ID is always retaine
 Checkout Rules and real `canCheckout` remain false; both Vendor deletion gates
 remain closed. Emulator tests, isolation/offline repairs and final documentation
 are pending at this intermediate checkpoint. No feature batch, migration or deploy.
+
+## Focused repair final source — local verification required
+
+Intermediate backup was confirmed on GitHub at
+`87b8d45fbc8561cee0ea2597cdae6d8a87d4cad2` before further test repairs.
+The final commit descends from it on `feature/stage-2c-checkout-orders`; its exact
+verified SHA is in the final report/GitHub history. Resume from that verified HEAD.
+
+Contention handling uses at most eight SDK attempts per transaction and five
+outer attempts. The outer retry is exclusively for `permission-denied` with an
+independently server-observed request state change or advanced stall counter.
+Stable-input authorization errors propagate; no fresh submission ID is generated.
+Confirmed state recovers the same receipt; cancelled state prevents confirmation.
+Network errors remain errors, including lost acknowledgement/server receipt reads.
+The Dart repository retains its session/gate checks and server-only receipt reads.
+Recovery probes, preparation acknowledgement and receipts also reject pending-write
+metadata, so local overlays cannot masquerade as server confirmation.
+The JS proof helper mirrors the protocol; malicious direct batches bypass recovery.
+This fallback addresses a possible stale-authorization path and is not evidence
+that all reported contention failures have been resolved at runtime.
+
+Each checkout test uses a fresh random demo project/database. There is no
+`clearFirestore()` between checkout races. Parallel submissions drain through
+`allSettled` before any failure is reported; confirm/discard inspects both results
+and permits only the appropriate successful/explicit-cancelled terminal outcome.
+Same-ID, four concurrent Students and the discard race now use four products.
+No permission, timeout or lock failure is accepted as a successful race outcome.
+
+The old offline test was a read-only transaction, which need not fail merely
+because the listener network was disabled. The replacement proves a local TCP
+forwarder works, disables SDK networking, cuts all RPC connections and attempts
+the real write-producing checkout transaction. Only connectivity errors count;
+permission errors fail. It terminates that client before removing the transport
+and verifies through a separate connected client: pending request, no order and
+no ticket. A test timeout fails; it does not manufacture an expected rejection.
+This is JS/emulator transport coverage, not Android offline acceptance.
+
+Final Codex checks on this repair:
+
+| Check | Actual result |
+| --- | --- |
+| `node checkout_budget.test.mjs` (from `test/firebase`) | 1/1 passed; six diagnostic assertions |
+| `node --check` on every Firebase `.mjs` file | Passed syntax checks |
+| `git diff --check` | Passed |
+| Original four security modules / 46 cases | Source unchanged byte-for-byte; not rerun |
+| 107 protected app files/config/assets outside checkout repository | Unchanged from the starting commit |
+| Flutter analyze/test, Rules compilation, 69-case emulator runner | Not run: Flutter/Dart SDK, Firebase CLI and Node dependencies unavailable |
+| Android acceptance / actual expression and access measurements | Not run/unmeasured |
+
+No SDK download or failed bootstrap was retried. Your **63/63 Flutter and clean
+analyzer, 58/65 old security results** remain reported historical Windows results,
+not results of this revision. All 69 security cases, the revised Dart repository
+and Android remain pending local verification. Keep both checkout gates and both
+Vendor deletion gates closed even if tests pass, until review authorizes enabling.
+The historical Chrome/Dart browser-loading gap is unchanged.
+
+Run the Windows commands above. `npm run test:checkout` must report **69 passed,
+0 failed** and exit zero from the budget guard. Preserve all output,
+`test/firebase/firestore-debug.log` (or the root log if emitted there),
+`artifacts/checkout-budget-diagnostics.json`, and per-case coverage JSON. If the
+runner reports missing logs, do not bypass it or call proof complete: retain the
+Firebase output and resolve the log location first. The extra unit test is 1 case
+outside the combined 69. No dependency or SDK version changes are needed.
+
+Manual Pixel 6 checks use only `main_emulator.dart` and the local demo project as
+shown above. Confirm the four-product Cart/review still works, Confirm Order and
+both Vendor deletes remain visibly disabled, and Vendor/Student navigation/logout
+remain intact. Successful real-client checkout cannot be accepted with gates shut.
+Stop here: no Stage 3 queue/FCFS/ETA/notifications or production rules deployment.

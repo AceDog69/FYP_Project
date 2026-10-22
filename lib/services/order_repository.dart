@@ -54,10 +54,15 @@ class FirebaseOrderRepository extends OrderRepository {
           return action(tx, observed);
         }, maxAttempts: 8);
       } on FirebaseException catch (error) {
-        if (error.code != 'permission-denied' || attempt == 4) rethrow;
+        if (error.code != 'permission-denied' || attempt == 4) {
+          rethrow;
+        }
         _guard(request);
         final saved = await _request(request.studentUid, request.id).get(const GetOptions(source: Source.server));
         _guard(request);
+        if (saved.metadata.hasPendingWrites) {
+          rethrow;
+        }
         final state = saved.exists ? saved.data()?['state'] : 'absent';
         if (observed.state != null && state != observed.state &&
             (state == 'confirmed' || state == 'cancelled' || state == 'pending')) {
@@ -67,8 +72,13 @@ class FirebaseOrderRepository extends OrderRepository {
           final counter = await db.collection('checkoutCounters').doc(request.vendorUid)
               .get(const GetOptions(source: Source.server));
           _guard(request);
+          if (counter.metadata.hasPendingWrites) {
+            rethrow;
+          }
           final ticket = counter.data()?['lastTicket'] ?? 0;
-          if (ticket is int && ticket > observed.ticket!) continue;
+          if (ticket is int && ticket > observed.ticket!) {
+            continue;
+          }
         }
         rethrow; // A stable-input authorization failure remains a failure.
       }
@@ -87,6 +97,9 @@ class FirebaseOrderRepository extends OrderRepository {
     });
     final snapshot = await _request(uid, request.id).get(const GetOptions(source: Source.server));
     _guard(request);
+    if (snapshot.metadata.hasPendingWrites) {
+      throw const AccountException('Checkout preparation is still awaiting server confirmation.');
+    }
     return CheckoutRequest.decode(request.id, snapshot.data()!);
   }
 
@@ -109,7 +122,9 @@ class FirebaseOrderRepository extends OrderRepository {
       final counterRef = db.collection('checkoutCounters').doc(intent.vendorUid);
       final counter = await tx.get(counterRef);
       final previousTicket = counter.data()?['lastTicket'] ?? 0;
-      if (previousTicket is int) observed.ticket = previousTicket;
+      if (previousTicket is int) {
+        observed.ticket = previousTicket;
+      }
       if (counter.exists && (counter.data()?['schemaVersion'] != 1 || counter.data()?['vendorUid'] != intent.vendorUid ||
           counter.data()!.length != 5 || counter.data()?['lastOrderId'] is! String || counter.data()?['updatedAt'] is! Timestamp ||
           previousTicket is! int || previousTicket < 1 || previousTicket >= 2147483647)) {
@@ -158,10 +173,16 @@ class FirebaseOrderRepository extends OrderRepository {
   Future<OrderReceipt> _receipt(String uid, String id) async {
     final header = await _order(id).get(const GetOptions(source: Source.server));
     if (_uid != uid) throw const AccountException('Your checkout session changed.');
+    if (header.metadata.hasPendingWrites) {
+      throw const AccountException('The order is still awaiting server confirmation.');
+    }
     final order = ConfirmedOrder.decode(id, header.data()!);
     if (order.studentUid != uid) throw const AccountException('Order ownership could not be verified.');
     final children = await _order(id).collection('items').get(const GetOptions(source: Source.server));
     if (_uid != uid) throw const AccountException('Your checkout session changed.');
+    if (children.metadata.hasPendingWrites) {
+      throw const AccountException('Order items are still awaiting server confirmation.');
+    }
     final docs = children.docs.toList()..sort((a, b) => a.id.compareTo(b.id));
     return OrderReceipt(order, [order.firstItem, ...docs.map((d) => OrderItem.decode(d.data(), snapshot: true))]);
   }
