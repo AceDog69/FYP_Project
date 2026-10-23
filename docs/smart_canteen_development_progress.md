@@ -2,7 +2,7 @@
 
 Updated 22 October 2026 (Asia/Singapore). Supervisor meeting: 28 October 2026.
 
-**Latest state:** the Stage 3A candidate section at the end supersedes historical checkpoint
+**Latest state:** the Stage 3B candidate section at the end supersedes historical checkpoint
 limitations/results below. Both Vendor destructive actions remain gated.
 
 ## Milestones and source
@@ -910,3 +910,59 @@ retains the previous 89 cases. Flutter SDK, Firebase CLI and Android unavailable
 Flutter tests and final verification/documentation are pending at this checkpoint.
 No SDK downloads retried. No deployment or Stage 3C work. See
 [Stage 3B architecture and acceptance handover](stage_3b_student_queue_eta.md).
+
+## Stage 3B final candidate handover — 23 October 2026
+
+Intermediate backup confirmed through GitHub on feature/stage-3b-student-queue-eta:
+`fa451b9bd45dfaaa71056570561f55846bd4b185`. The delivery report gives the exact final
+commit SHA (the commit containing this handover); verify with git rev-parse HEAD
+on Windows. No main/Stage 3A ref update, force-push, merge or deployment.
+
+Implemented candidate: own-Student real-time Queue with Active/History, statuses,
+stall-isolated ticket progress, deterministic orders ahead, approximate time until
+Ready, last-updated labels, missing/syncing/elapsed/cached/error states and Retry.
+Ready/Completed are no longer waiting. Per-order configured preparationMinutes
+snapshots remain the baseline; no invented averages, statistics or countdown.
+
+The public six-field queueProgress projection contains only stall ID, schema,
+next-ticket/revision numbers, preparation flag and authoritative timestamp. Every
+Start/Ready transaction atomically updates order/cursor/projection. Rules require
+exact matching after-state, actual cursor advancement for updates, monotonic
+projection revisions and strict shape/ownership. Students gain only per-stall
+GET permission to aggregates for published stalls. Private preparingOrderId,
+other Students' orders and source stalls remain protected. Existing checkout is
+the sole unchanged Student ticket-allocation protocol; Queue has no write action.
+Vendor Orders can publish a missing initial/legacy projection exactly without
+advancing/resetting the queue; missing data otherwise stays unavailable.
+
+Both inline original references were actually visible: My Cart and Checkout &
+Payment. Those screens now follow their orange rounded headers, stall context,
+white bordered cards, large local food pictures, quantity controls, summaries,
+orange totals and full-width payment selection/actions. Three-product sample
+content yields to the two-food business limit. Checkout navigation has real
+callbacks; pending submissions lock it. Receipt styling is consistent. No
+unrelated Vendor/Auth/Student Profile redesign or new image library.
+
+Cloud results: original 11 Node safety/budget/transport cases passed, with the 7
+launcher cases rerun successfully after final Rules changes; JS syntax checks of
+four queue/FCFS/runner modules and Git whitespace checks passed. A supplemental
+Dart lexical delimiter audit passed; NOT compilation/analysis. Source comparisons
+confirmed checkout transaction/retries, controller, Cart model, limits, launcher,
+dependencies and prior 70 security source files unchanged. All 83 earlier Flutter
+case declarations and 19 FCFS case names remain; only necessary UI finders and
+atomic-projection test fixtures were adapted without removing assertions/cases.
+
+Added 19 Flutter cases and 15 projection security cases. Expected full suites:
+Flutter 102 (83+19), Firebase 104 (89+15). **Neither full suite, Flutter analyze,
+Rules compilation/budget execution nor Android acceptance ran in Cloud.** Flutter /
+Dart binaries, Firebase CLI and npm dependencies are unavailable. No repeated SDK
+downloads attempted. Base Windows acceptance 83/89/zero diagnostics remains a base
+result only. The historical Chrome loader integration gap remains unpassed.
+
+[Stage 3B handover and exact Windows/Pixel 6 instructions](stage_3b_student_queue_eta.md)
+records formulas, privacy/atomic proof, conservative access-call review, test
+commands, visual adaptations, bootstrap behavior and known ETA limitations. Require
+all local checks passing and zero budget diagnostics before accepting the candidate.
+Checkout and both deletion gates stay closed in checked-in Rules; existing safe
+emulator-only launcher is preserved. No production Firebase writes, billing,
+Functions or real payments. STOP: Stage 3C Ready notifications remain unstarted.

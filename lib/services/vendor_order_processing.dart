@@ -47,7 +47,8 @@ class VendorOrderProcessing {
       if (progress.exists) {
         final existing = QueueProgress.decode(uid, progress.data());
         if (existing.nextTicket != queue.nextTicket || existing.preparing != (queue.preparingOrderId != null) ||
-            existing.revision != queue.revision) {
+            existing.revision != queue.revision ||
+            (cursor.exists && existing.updatedAt != cursor.data()!['updatedAt'])) {
           throw const AccountException('Queue progress does not match the preparation cursor. Review server data.');
         }
         return;

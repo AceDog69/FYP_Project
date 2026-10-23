@@ -14,7 +14,7 @@ class CommerceHeader extends StatelessWidget {
     padding: const EdgeInsets.fromLTRB(12, 22, 16, 22),
     decoration: const BoxDecoration(color: primaryOrange, borderRadius: BorderRadius.vertical(bottom: Radius.circular(24))),
     child: Row(children: [
-      IconButton(tooltip: 'Back', onPressed: onBack, icon: const Icon(Icons.arrow_back, color: Colors.white)),
+      IconButton(tooltip: 'Back', onPressed: onBack, icon: Icon(Icons.arrow_back, color: onBack == null ? Colors.white54 : Colors.white)),
       const SizedBox(width: 8),
       Expanded(child: Text(title, style: const TextStyle(color: Colors.white, fontSize: 23, fontWeight: FontWeight.w700))),
       ...actions,
@@ -62,7 +62,10 @@ class CommerceSummary extends StatelessWidget {
     Text('Order Summary', style: Theme.of(context).textTheme.titleLarge), const SizedBox(height: 14),
     for (final item in items) Padding(padding: const EdgeInsets.symmetric(vertical: 6), child: Row(children: [
       if (pictures) ...[StallPicture(item.pictureId, width: 48, height: 48), const SizedBox(width: 10)],
-      Expanded(child: Text('${item.name} × ${item.quantity}', style: const TextStyle(color: mutedText))),
+      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('${item.name} × ${item.quantity}', style: const TextStyle(color: mutedText)),
+        if (pictures) Text('${rm(item.priceSen)} each', style: const TextStyle(color: mutedText, fontSize: 12)),
+      ])),
       const SizedBox(width: 8), Text(rm(item.subtotalSen), style: const TextStyle(color: mutedText)),
     ])),
     const Divider(height: 24),
@@ -101,6 +104,6 @@ class PaymentMethodCard extends StatelessWidget {
             const SizedBox(width: 8), Icon(selected ? Icons.radio_button_checked : Icons.radio_button_off, color: color, size: 27),
           ])),
         )),
-    )));
+    ));
   }
 }

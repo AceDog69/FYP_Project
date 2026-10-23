@@ -59,8 +59,12 @@ class FirebaseOrderRepository extends OrderRepository {
   Stream<QueueProgress> queueProgress(String vendorUid) async* {
     final session = _uid;
     await for (final snapshot in db.collection('queueProgress').doc(vendorUid).snapshots(includeMetadataChanges: true)) {
-      if (_uid != session) throw const AccountException('Your queue session changed.');
-      if (snapshot.metadata.hasPendingWrites) continue;
+      if (_uid != session) {
+        throw const AccountException('Your queue session changed.');
+      }
+      if (snapshot.metadata.hasPendingWrites) {
+        continue;
+      }
       yield QueueProgress.decode(vendorUid, snapshot.data(), cached: snapshot.metadata.isFromCache);
     }
   }

@@ -14,9 +14,10 @@ String queueTime(Timestamp timestamp) {
 }
 
 class StudentQueueScreen extends StatefulWidget {
-  const StudentQueueScreen({super.key, required this.repository, required this.studentUid});
+  const StudentQueueScreen({super.key, required this.repository, required this.studentUid, this.clock});
   final OrderRepository? repository;
   final String studentUid;
+  final DateTime Function()? clock;
   @override
   State<StudentQueueScreen> createState() => _StudentQueueScreenState();
 }
@@ -58,34 +59,42 @@ class _StudentQueueScreenState extends State<StudentQueueScreen> {
       if (orders.isEmpty) Padding(padding: const EdgeInsets.all(32), child: Text(
         _history ? 'No completed tickets yet' : 'No active tickets yet', textAlign: TextAlign.center)),
       for (final order in orders) _QueueCard(key: ValueKey('${widget.studentUid}/${order.id}'),
-        order: order, repository: widget.repository!, cachedOrder: s.data!.cached),
+        order: order, repository: widget.repository!, cachedOrder: s.data!.cached, clock: widget.clock ?? DateTime.now, onRefresh: () => setState(_load)),
     ]);
   });
 }
 
 class _QueueCard extends StatefulWidget {
-  const _QueueCard({super.key, required this.order, required this.repository, required this.cachedOrder});
+  const _QueueCard({super.key, required this.order, required this.repository, required this.cachedOrder, required this.clock, required this.onRefresh});
   final ConfirmedOrder order;
   final OrderRepository repository;
   final bool cachedOrder;
+  final DateTime Function() clock;
+  final VoidCallback onRefresh;
   @override
   State<_QueueCard> createState() => _QueueCardState();
 }
 class _QueueCardState extends State<_QueueCard> {
-  late Stream<QueueProgress> _progress = widget.repository.queueProgress(widget.order.vendorUid);
+  bool _terminal(ConfirmedOrder order) => order.status == 'Ready' || order.status == 'Completed';
+  Stream<QueueProgress> _stream() => _terminal(widget.order)
+    ? Stream.value(QueueProgress.unavailable(widget.order.vendorUid))
+    : widget.repository.queueProgress(widget.order.vendorUid);
+  late Stream<QueueProgress> _progress = _stream();
   @override
   void didUpdateWidget(covariant _QueueCard oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.order.vendorUid != widget.order.vendorUid || oldWidget.repository != widget.repository) {
-      _progress = widget.repository.queueProgress(widget.order.vendorUid);
+    if (oldWidget.order.vendorUid != widget.order.vendorUid || oldWidget.repository != widget.repository ||
+        _terminal(oldWidget.order) != _terminal(widget.order)) {
+      _progress = _stream();
     }
   }
   @override
   Widget build(BuildContext context) => StreamBuilder<QueueProgress>(stream: _progress, builder: (context, s) {
     final order = widget.order, terminal = order.status == 'Ready' || order.status == 'Completed';
+    final checkedAt = widget.clock();
     final estimate = estimateQueue(order, widget.cachedOrder ? QueueProgress.unavailable(order.vendorUid, cached: true)
-      : s.data, DateTime.now());
-    final verified = !widget.cachedOrder && !s.hasError && (terminal || (s.hasData && s.connectionState != ConnectionState.waiting));
+      : s.data, checkedAt);
+    final verified = !widget.cachedOrder && (terminal || (!s.hasError && s.hasData && s.connectionState != ConnectionState.waiting));
     return Card(key: ValueKey('queue-${order.id}'), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16),
       side: const BorderSide(color: Color(0xFFE8E8ED))), child: Padding(padding: const EdgeInsets.all(16), child: Column(
       crossAxisAlignment: CrossAxisAlignment.stretch, children: [
@@ -100,17 +109,19 @@ class _QueueCardState extends State<_QueueCard> {
         Text('Orders ahead: ${verified && estimate.ahead != null ? estimate.ahead : 'Unavailable'}',
           style: const TextStyle(fontWeight: FontWeight.w700)),
         const SizedBox(height: 8),
-        Text(terminal ? (order.status == 'Ready' ? 'Ready for pickup' : 'Completed')
+        Text(terminal ? '${widget.cachedOrder ? 'Last known: ' : ''}${order.status == 'Ready' ? 'Ready for pickup' : 'Completed'}'
           : verified && estimate.minutes != null ? 'Approx. ${estimate.minutes} min until Ready'
           : estimate.overdue ? 'Initial estimate elapsed' : 'Waiting time unavailable',
           style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: primaryOrange)),
         const SizedBox(height: 8), Text(estimate.message),
+        if (!terminal && verified && estimate.minutes != null) Text(
+          'Estimate checked: ${queueTime(Timestamp.fromDate(checkedAt))}', style: Theme.of(context).textTheme.bodySmall),
         Text('Initial preparation allowance: ${order.preparationMinutes} min (recorded at confirmation).',
           style: Theme.of(context).textTheme.bodySmall),
         const SizedBox(height: 8),
         Text('Order updated: ${queueTime(order.statusUpdatedAt ?? order.createdAt)}', style: Theme.of(context).textTheme.bodySmall),
         if (s.data?.updatedAt != null) Text('Queue updated: ${queueTime(s.data!.updatedAt!)}', style: Theme.of(context).textTheme.bodySmall),
-        TextButton(onPressed: () => setState(() => _progress = widget.repository.queueProgress(order.vendorUid)),
+        TextButton(onPressed: widget.onRefresh,
           child: const Text('Refresh Queue')),
         OutlinedButton(onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) =>
           OrderDetails(order: order, repository: widget.repository))), child: const Text('View Order Details')),

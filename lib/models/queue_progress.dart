@@ -13,7 +13,9 @@ class QueueProgress {
   final int revision;
   final Timestamp? updatedAt;
   factory QueueProgress.decode(String uid, Map<String, dynamic>? d, {bool cached = false}) {
-    if (d == null) return QueueProgress.unavailable(uid, cached: cached);
+    if (d == null) {
+      return QueueProgress.unavailable(uid, cached: cached);
+    }
     if (d.length != 6 || d['schemaVersion'] != 1 || d['vendorUid'] != uid ||
         d['nextTicket'] is! int || d['nextTicket'] < 1 || d['nextTicket'] > 2147483648 ||
         d['preparing'] is! bool || d['revision'] is! int || d['revision'] < 0 ||
