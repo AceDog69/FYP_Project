@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/confirmed_order.dart';
 import '../models/vendor_queue.dart';
+import '../models/queue_progress.dart';
 import 'auth_repository.dart';
 
 // Separate from the accepted checkout protocol: this service never writes an
@@ -20,6 +21,7 @@ class VendorOrderProcessing {
   }
   Stream<VendorQueue> watch() async* {
     final uid = _uid;
+    var published = false;
     await for (final s in _queue(uid).snapshots(includeMetadataChanges: true)) {
       if (_uid != uid) {
         throw const AccountException('Your Vendor session changed.');
@@ -27,8 +29,34 @@ class VendorOrderProcessing {
       if (s.metadata.hasPendingWrites) {
         continue;
       }
+      if (!s.metadata.isFromCache && !published && enabled()) {
+        await _publishMissingProgress(uid);
+        published = true;
+      }
       yield VendorQueue.decode(uid, s.data(), cached: s.metadata.isFromCache);
     }
+  }
+  Future<void> _publishMissingProgress(String uid) async {
+    _guard(uid);
+    await db.runTransaction<void>((tx) async {
+      final cursor = await tx.get(_queue(uid));
+      final target = db.collection('queueProgress').doc(uid);
+      final progress = await tx.get(target);
+      _guard(uid);
+      final queue = VendorQueue.decode(uid, cursor.data());
+      if (progress.exists) {
+        final existing = QueueProgress.decode(uid, progress.data());
+        if (existing.nextTicket != queue.nextTicket || existing.preparing != (queue.preparingOrderId != null) ||
+            existing.revision != queue.revision) {
+          throw const AccountException('Queue progress does not match the preparation cursor. Review server data.');
+        }
+        return;
+      }
+      tx.set(target, {'schemaVersion': 1, 'vendorUid': uid, 'nextTicket': queue.nextTicket,
+        'preparing': queue.preparingOrderId != null, 'revision': queue.revision,
+        'updatedAt': cursor.data()?['updatedAt'] ?? FieldValue.serverTimestamp()});
+    }, maxAttempts: 8);
+    _guard(uid);
   }
   Future<void> advance(ConfirmedOrder expected) async {
     final uid = _uid;
@@ -69,6 +97,12 @@ class VendorOrderProcessing {
             'nextTicket': queue.nextTicket + (next == 'Preparing' ? 1 : 0),
             'preparingOrderId': next == 'Preparing' ? order.id : null,
             'revision': queue.revision + 1, 'updatedAt': FieldValue.serverTimestamp()});
+          tx.set(db.collection('queueProgress').doc(uid), {
+            'schemaVersion': 1, 'vendorUid': uid,
+            'nextTicket': queue.nextTicket + (next == 'Preparing' ? 1 : 0),
+            'preparing': next == 'Preparing', 'revision': queue.revision + 1,
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
         }
       }, maxAttempts: 8);
       _guard(uid);

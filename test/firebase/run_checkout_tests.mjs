@@ -12,7 +12,8 @@ const offsets=new Map(paths.map(path=>[path,existsSync(path)?readFileSync(path).
 const child=spawn(process.execPath,['--test','--test-concurrency=1',
   'stage_one.test.mjs','vendor_operations.test.mjs','vendor_menu.test.mjs',
   'student_catalog.test.mjs','checkout_orders.test.mjs',
-  ...(process.argv.includes('--fcfs') ? ['vendor_fcfs.test.mjs'] : [])],{cwd:directory,env:process.env,stdio:['inherit','pipe','pipe']});
+  ...((process.argv.includes('--fcfs') || process.argv.includes('--queue')) ? ['vendor_fcfs.test.mjs'] : []),
+  ...(process.argv.includes('--queue') ? ['student_queue.test.mjs'] : [])],{cwd:directory,env:process.env,stdio:['inherit','pipe','pipe']});
 let output='';
 for(const [stream,target] of [[child.stdout,process.stdout],[child.stderr,process.stderr]]) {
   stream.on('data',chunk=>{output+=chunk.toString();target.write(chunk);});
@@ -25,7 +26,7 @@ const logs=paths.filter(existsSync).map(path=>{
 const failures=[...budgetFailures(output),...logs.flatMap(log=>budgetFailures(log.text))];
 const evidence=logs.some(log=>log.text.length>0);
 mkdirSync(resolve(directory,'artifacts'),{recursive:true});
-writeFileSync(resolve(directory,process.argv.includes('--fcfs') ? 'artifacts/fcfs-budget-diagnostics.json' : 'artifacts/checkout-budget-diagnostics.json'),JSON.stringify({
+writeFileSync(resolve(directory,process.argv.includes('--queue') ? 'artifacts/student-queue-budget-diagnostics.json' : process.argv.includes('--fcfs') ? 'artifacts/fcfs-budget-diagnostics.json' : 'artifacts/checkout-budget-diagnostics.json'),JSON.stringify({
   childExitCode:code,logs:logs.map(log=>log.path),budgetDiagnostics:failures,
   note:'No per-request expression count is inferred from log silence. Positive 1–2-food, over-limit rejection and all integrity/concurrency tests must also pass.'
 },null,2));

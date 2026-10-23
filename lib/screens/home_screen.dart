@@ -15,6 +15,7 @@ import '../services/checkout_controller.dart';
 import '../models/confirmed_order.dart';
 import 'checkout_screen.dart';
 import 'orders_screen.dart';
+import 'student_queue_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({
@@ -46,7 +47,8 @@ class _HomeScreenState extends State<HomeScreen> {
       }
     }
     Navigator.push(context, MaterialPageRoute(builder: (_) => CheckoutScreen(controller: _checkout,
-      onOrders: () { Navigator.pop(context); setState(() => _index = 1); })));
+      onOrders: () { Navigator.pop(context); setState(() => _index = 1); },
+      onNavigate: (index) { Navigator.pop(context); setState(() => _index = index); })));
   }
   List<String> get _labels => _vendor
       ? ['Dashboard', 'Orders', 'Menu', 'Profile']
@@ -115,7 +117,7 @@ class _HomeScreenState extends State<HomeScreen> {
   );
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: _vendor && (_index == 0 || _index == 2 || _index == 3) ? null : AppBar(
+    appBar: (_vendor && (_index == 0 || _index == 2 || _index == 3)) || (!_vendor && _index == 2) ? null : AppBar(
       automaticallyImplyLeading: false,
       title: const Brand(),
       bottom: const PreferredSize(
@@ -143,6 +145,8 @@ class _HomeScreenState extends State<HomeScreen> {
           : !_vendor && _index == 2
           ? StudentCartScreen(cart: _cart, onBrowse: () => setState(() => _index = 0),
               onCheckout: _openCheckout, checkoutAvailable: widget.repository.orderRepository != null)
+          : !_vendor && _index == 3
+          ? StudentQueueScreen(repository: widget.repository.orderRepository, studentUid: widget.profile.uid)
           : !_vendor && _index == 0
           ? StudentHome(repository: widget.repository.catalogRepository,
               onStall: (stall) => Navigator.push(context, MaterialPageRoute(builder: (_) => StudentStallMenu(

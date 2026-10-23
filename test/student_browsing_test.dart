@@ -48,13 +48,13 @@ void main() {
     await tester.tap(find.byTooltip('Increase quantity')); await tester.pumpAndSettle();
     expect(find.text('Subtotal: RM 17.00'), findsOneWidget);
     await stage.tap(tester, 'Add to Cart'); await stage.tap(tester, 'Cart (2)');
-    expect(find.text('Total: RM 17.00'), findsOneWidget);
+    expect(tester.widget<Text>(find.byKey(const ValueKey('commerce-total'))).data, 'RM 17.00');
     expect(tester.widget<BottomNavigationBar>(find.byType(BottomNavigationBar)).items.length, 5);
     await tester.tap(find.byTooltip('Increase bowl')); await tester.pumpAndSettle();
-    expect(find.text('Total: RM 25.50'), findsOneWidget);
+    expect(tester.widget<Text>(find.byKey(const ValueKey('commerce-total'))).data, 'RM 25.50');
     await tester.tap(find.byTooltip('Decrease bowl')); await tester.pumpAndSettle();
     await stage.tap(tester, 'Orders'); expect(find.text('No orders yet'), findsOneWidget);
-    await stage.tap(tester, 'Cart'); expect(find.text('Total: RM 17.00'), findsOneWidget);
+    await stage.tap(tester, 'Cart'); expect(tester.widget<Text>(find.byKey(const ValueKey('commerce-total'))).data, 'RM 17.00');
     await stage.tap(tester, 'Review Checkout');
     expect(tester.widget<FilledButton>(find.widgetWithText(FilledButton, 'Confirm Order')).onPressed, isNull);
     await tester.pageBack(); await tester.pumpAndSettle();
@@ -75,9 +75,9 @@ void main() {
     await stage.tap(tester, 'Add to Cart'); await stage.tap(tester, 'Switch Stall');
     await stage.tap(tester, 'Cart (1)'); expect(find.text('Beta Kitchen'), findsOneWidget);
     expect(find.text('Alpha Kitchen'), findsNothing);
-    await stage.tap(tester, 'Remove'); await stage.tap(tester, 'Cancel');
+    await tester.tap(find.byTooltip('Remove bowl')); await tester.pumpAndSettle(); await stage.tap(tester, 'Cancel');
     expect(find.text('Rice Bowl'), findsOneWidget);
-    await stage.tap(tester, 'Remove'); await stage.tap(tester, 'Remove');
+    await tester.tap(find.byTooltip('Remove bowl')); await tester.pumpAndSettle(); await stage.tap(tester, 'Remove');
     expect(find.text('Your cart is empty'), findsOneWidget);
   });
 
@@ -152,11 +152,11 @@ void main() {
     repo.catalogRepository.foodItems['alpha']![0] = food('bowl', name: 'Updated Bowl', price: 905, revision: 2);
     repo.catalogRepository.emit(); await tester.pumpAndSettle();
     expect(find.textContaining('Menu details changed'), findsOneWidget);
-    expect(find.text('Total: RM 8.50'), findsOneWidget);
+    expect(tester.widget<Text>(find.byKey(const ValueKey('commerce-total'))).data, 'RM 8.50');
     await stage.tap(tester, 'Review Changes'); await stage.tap(tester, 'Cancel');
-    expect(find.text('Total: RM 8.50'), findsOneWidget);
+    expect(tester.widget<Text>(find.byKey(const ValueKey('commerce-total'))).data, 'RM 8.50');
     await stage.tap(tester, 'Review Changes'); await stage.tap(tester, 'Apply Latest');
-    expect(find.text('Total: RM 9.05'), findsOneWidget); expect(find.text('Updated Bowl'), findsOneWidget);
+    expect(tester.widget<Text>(find.byKey(const ValueKey('commerce-total'))).data, 'RM 9.05'); expect(find.text('Updated Bowl'), findsOneWidget);
     repo.catalogRepository.cached = true; repo.catalogRepository.emit(); await tester.pumpAndSettle();
     expect(find.textContaining('Cart needs a current server menu'), findsOneWidget);
     final increaseButton = find.ancestor(

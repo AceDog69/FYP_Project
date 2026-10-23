@@ -6,7 +6,7 @@ import { initializeTestEnvironment, assertFails, assertSucceeds } from '@firebas
 import { doc, getDocFromServer, setDoc, updateDoc, deleteDoc, writeBatch, serverTimestamp,
   onSnapshot, disableNetwork } from 'firebase/firestore';
 import { account, vendor, draft, prepare, submit, orderRef, counterRef, requestRef } from './checkout_helpers.mjs';
-import { queueRef, initialQueue, progressWrites, advance } from './fcfs_helpers.mjs';
+import { queueRef, progressRef, progressData, initialQueue, progressWrites, advance } from './fcfs_helpers.mjs';
 import { checkoutTransport, expectedOfflineRejection, boundedOfflineCleanup } from './checkout_transport.mjs';
 import { budgetDiagnostic } from './checkout_budget.mjs';
 
@@ -144,7 +144,8 @@ test('invalid transitions, unknown states, missing revisions and forged server t
     {status:'Preparing',statusRevision:1,statusUpdatedAt:serverTimestamp()},
   ]) {
     const batch=writeBatch(owner);batch.update(orderRef(owner,first.orderId),fields);
-    batch.set(queueRef(owner),queueData('vendor',2,first.orderId,1));await deny(batch.commit());
+    const cursor=queueData('vendor',2,first.orderId,1);
+    batch.set(queueRef(owner),cursor);batch.set(progressRef(owner),progressData('vendor',cursor));await deny(batch.commit());
   }
   await assertSucceeds(advance(owner,first));
 });

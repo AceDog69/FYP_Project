@@ -3,6 +3,7 @@ import '../constants/checkout_limits.dart';
 import '../models/confirmed_order.dart';
 import '../models/vendor_menu.dart';
 import '../models/vendor_queue.dart';
+import '../models/queue_progress.dart';
 import 'auth_repository.dart';
 import 'vendor_order_processing.dart';
 
@@ -14,6 +15,7 @@ abstract class OrderRepository {
   Stream<VendorQueue> queue() => Stream.value(const VendorQueue.initial());
   Future<void> advance(ConfirmedOrder order) => Future.error(
     const AccountException('Order processing is available only in the local emulator demo.'));
+  Stream<QueueProgress> queueProgress(String vendorUid) => Stream.value(QueueProgress.unavailable(vendorUid));
   String newSubmissionId();
   Future<CheckoutRequest> prepare(CheckoutRequest request);
   Future<OrderReceipt> submit(CheckoutRequest request);
@@ -53,6 +55,15 @@ class FirebaseOrderRepository extends OrderRepository {
   Stream<VendorQueue> queue() => _processing.watch();
   @override
   Future<void> advance(ConfirmedOrder order) => _processing.advance(order);
+  @override
+  Stream<QueueProgress> queueProgress(String vendorUid) async* {
+    final session = _uid;
+    await for (final snapshot in db.collection('queueProgress').doc(vendorUid).snapshots(includeMetadataChanges: true)) {
+      if (_uid != session) throw const AccountException('Your queue session changed.');
+      if (snapshot.metadata.hasPendingWrites) continue;
+      yield QueueProgress.decode(vendorUid, snapshot.data(), cached: snapshot.metadata.isFromCache);
+    }
+  }
   @override
   String newSubmissionId() => db.collection('orders').doc().id;
 

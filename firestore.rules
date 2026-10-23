@@ -106,12 +106,16 @@ service cloud.firestore {
     }
     function validQueueWrite(d, uid) {
       let before = queueBefore(uid);
-      return validQueue(d, uid) && (before.preparingOrderId == null
-        ? (d.preparingOrderId is string && queueClaim(uid, d.preparingOrderId, before.nextTicket)
-          && get(orderPath(d.preparingOrderId)).data.ticket == before.nextTicket
-          && pairedQueueOrder(uid, d.preparingOrderId, 'Pending', 'Preparing'))
-        : (queueRelease(uid, before.preparingOrderId)
-          && pairedQueueOrder(uid, before.preparingOrderId, 'Preparing', 'Ready')));
+      // Compare the write directly; avoid re-reading this same cursor through
+      // queueClaim/queueRelease inside its own rule. The order rule still calls
+      // those reciprocal validators, preserving the Stage 3A invariant.
+      return validQueue(d, uid) && d.revision == before.revision + 1
+        && (before.preparingOrderId == null
+          ? (d.preparingOrderId is string && d.nextTicket == before.nextTicket + 1
+            && get(orderPath(d.preparingOrderId)).data.ticket == before.nextTicket
+            && pairedQueueOrder(uid, d.preparingOrderId, 'Pending', 'Preparing'))
+          : (d.preparingOrderId == null && d.nextTicket == before.nextTicket
+            && pairedQueueOrder(uid, before.preparingOrderId, 'Preparing', 'Ready')));
     }
     function validOrderProgress(d, before, id) {
       return d.diff(before).affectedKeys().hasOnly([
@@ -129,6 +133,36 @@ service cloud.firestore {
             && d.status == 'Completed' && d.statusRevision == 3
             && d.preparingAt == before.preparingAt && d.readyAt == before.readyAt
             && d.completedAt == request.time));
+    }
+    function progressPath(uid) { return /databases/$(database)/documents/queueProgress/$(uid); }
+    // Public aggregate only: no order ID, Student identity or private stall data.
+    function progressShape(d, uid) {
+      return d.keys().hasAll(['schemaVersion','vendorUid','nextTicket','preparing','revision','updatedAt'])
+        && d.keys().hasOnly(['schemaVersion','vendorUid','nextTicket','preparing','revision','updatedAt'])
+        && d.schemaVersion == 1 && d.vendorUid == uid && d.nextTicket is int
+        && d.nextTicket >= 1 && d.nextTicket <= 2147483648
+        && d.preparing is bool && d.revision is int && d.updatedAt is timestamp
+        && d.revision == 2 * (d.nextTicket - 1) - (d.preparing ? 1 : 0)
+        && d.revision >= 0;
+    }
+    function progressMatches(d, q, uid) {
+      return progressShape(d, uid) && d.nextTicket == q.nextTicket
+        && d.preparing == (q.preparingOrderId != null)
+        && d.revision == q.revision && d.updatedAt == q.updatedAt;
+    }
+    function validProgressCreate(d, uid) {
+      // A one-time owner bootstrap may mirror an existing legacy cursor without
+      // moving it. Missing progress never means zero to a Student client.
+      return existsAfter(queuePath(uid))
+        ? progressMatches(d, getAfter(queuePath(uid)).data, uid)
+        : (progressShape(d, uid) && d.nextTicket == 1 && d.preparing == false
+          && d.revision == 0 && d.updatedAt == request.time);
+    }
+    function validProgressUpdate(d, uid) {
+      let after = getAfter(queuePath(uid)).data;
+      return progressMatches(d, after, uid) && d.revision > resource.data.revision
+        && d.nextTicket >= resource.data.nextTicket && after.updatedAt == request.time
+        && after.revision == queueBefore(uid).revision + 1;
     }
     function orderItemPath(id, index) { return /databases/$(database)/documents/orders/$(id)/items/$(index); }
     function requestPath(uid, id) { return /databases/$(database)/documents/users/$(uid)/checkoutRequests/$(id); }
@@ -359,10 +393,17 @@ service cloud.firestore {
         && request.resource.data.lastTicket == resource.data.lastTicket + 1;
       allow delete: if false;
     }
+    match /queueProgress/{vendorUid} {
+      allow get: if studentMenuReader(vendorUid) || configuredVendor(vendorUid);
+      allow list, delete: if false;
+      allow create: if configuredVendor(vendorUid) && validProgressCreate(request.resource.data, vendorUid);
+      allow update: if configuredVendor(vendorUid) && validProgressUpdate(request.resource.data, vendorUid);
+    }
     match /vendorQueues/{vendorUid} {
       allow get: if configuredVendor(vendorUid);
       allow list, delete: if false;
-      allow create, update: if configuredVendor(vendorUid) && validQueueWrite(request.resource.data, vendorUid);
+      allow create, update: if configuredVendor(vendorUid) && validQueueWrite(request.resource.data, vendorUid)
+        && progressMatches(getAfter(progressPath(vendorUid)).data, request.resource.data, vendorUid);
     }
     match /orders/{orderId} {
       allow read: if orderReader(resource.data);

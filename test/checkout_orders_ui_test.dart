@@ -7,6 +7,7 @@ import 'package:my_fyp_app/services/auth_repository.dart';
 import 'package:my_fyp_app/services/student_cart.dart';
 import 'package:my_fyp_app/screens/orders_screen.dart';
 import 'package:my_fyp_app/screens/student_cart_screen.dart';
+import 'package:my_fyp_app/widgets/student_commerce_widgets.dart';
 import 'support/catalog_fixtures.dart';
 import 'support/fake_order_repository.dart';
 import 'stage_one_test.dart' as stage;
@@ -27,10 +28,10 @@ void main() {
   testWidgets('review displays exact RM and simulated methods; confirmation stays visibly gated', (tester) async {
     final repo = stage.TestRepository()..session(stage.profile(AccountRole.student)); addTearDown(repo.dispose);
     await openCheckout(tester, repo);
-    expect(find.text('Checkout Review'), findsOneWidget); expect(find.text('Total: RM 8.50'), findsOneWidget);
+    expect(find.text('Checkout Review'), findsOneWidget); expect(tester.widget<Text>(find.byKey(const ValueKey('commerce-total'))).data, 'RM 8.50');
     expect(find.text('Up to two distinct foods per order, 1–20 units each.'), findsOneWidget);
     expect(find.textContaining('no money is charged'), findsOneWidget);
-    expect(find.byType(ChoiceChip), findsNWidgets(3));
+    expect(find.byType(PaymentMethodCard), findsNWidgets(3));
     expect(tester.widget<FilledButton>(find.widgetWithText(FilledButton,'Confirm Order')).onPressed, isNull);
     expect(repo.orderRepository.submitCalls, 0);
   });
@@ -49,7 +50,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Up to two distinct foods per order, 1–20 units each.'), findsOneWidget);
     await tester.ensureVisible(find.text('Review Checkout'));
-    expect(find.text('Total: RM 351.00'), findsOneWidget);
+    expect(tester.widget<Text>(find.byKey(const ValueKey('commerce-total'))).data, 'RM 351.00');
     expect(tester.widget<FilledButton>(find.widgetWithText(FilledButton,'Review Checkout')).onPressed, isNotNull);
     await tester.tap(find.text('Review Checkout')); expect(reviews, 1); expect(cart.itemCount, 40);
   });
@@ -75,7 +76,7 @@ void main() {
     final repo = stage.TestRepository()..session(stage.profile(AccountRole.student)); addTearDown(repo.dispose);
     repo.orderRepository.enabled = true; repo.orderRepository.submitError = const AccountException('Connection interrupted.');
     await openCheckout(tester, repo); await stage.tap(tester, 'Confirm Order');
-    expect(find.text('Connection interrupted.'), findsOneWidget); expect(find.text('Total: RM 8.50'), findsOneWidget);
+    expect(find.text('Connection interrupted.'), findsOneWidget); expect(tester.widget<Text>(find.byKey(const ValueKey('commerce-total'))).data, 'RM 8.50');
     final id = repo.orderRepository.submittedIds.single;
     await tester.pageBack(); await tester.pumpAndSettle();
     expect(find.textContaining('unconfirmed checkout is retained'), findsOneWidget);

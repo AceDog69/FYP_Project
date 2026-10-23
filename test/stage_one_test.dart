@@ -336,7 +336,7 @@ void main() {
       );
       for (final label in ['Orders', 'Cart', 'Queue']) {
         await tap(tester, label);
-        expect(find.text(label == 'Cart' ? 'Your cart is empty' : label == 'Orders' ? 'No orders yet' : 'Coming soon'), findsOneWidget);
+        expect(find.text(label == 'Cart' ? 'Your cart is empty' : label == 'Orders' ? 'No orders yet' : 'No active tickets yet'), findsOneWidget);
       }
       await tap(tester, 'Profile');
       expect(find.text('alex@example.com'), findsOneWidget);

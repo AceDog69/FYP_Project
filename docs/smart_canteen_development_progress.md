@@ -887,3 +887,26 @@ Next step is local review/acceptance of this exact candidate; resolve any new
 analyzer/test/Rules failures first. The old Chrome integration loader stall remains
 an unpassed historical gap. Stage 3B Student Queue/ETA and Stage 3C notifications
 remain unstarted and require separate authorization.
+
+## Stage 3B candidate checkpoint — 23 October 2026
+
+Verified Stage 3A base `2f950fa600d72ac3b01486aaea0e07571f053feb`; new branch
+`feature/stage-3b-student-queue-eta`. The user confirmed base Windows acceptance:
+analyze clean, Flutter 83/83, Firebase FCFS 89/89, zero budget diagnostics, Pixel 6
+checkout, FCFS, progression and Student history/details passed.
+
+Candidate implements own-Student real-time Queue/History, per-stall numeric
+progress, deterministic orders-ahead and approximate time until Ready, cached /
+missing / syncing / overdue / error handling. New owner-validated queueProgress
+projection has no preparingOrderId or Student details, and is required atomically
+on cursor transitions. Existing private cursor/FCFS and immutable receipts remain
+protected. Vendor bootstrap of missing legacy progress is exact and non-advancing.
+Cart and Checkout use the actually visible original inline reference images,
+adapted to TWO foods, existing assets, simulated payment and accepted safeguards.
+
+Cloud: 11 Node regression tests passed; new/updated JS syntax and Git whitespace
+checks passed. New 15-case queue security suite is unexecuted; the combined runner
+retains the previous 89 cases. Flutter SDK, Firebase CLI and Android unavailable;
+Flutter tests and final verification/documentation are pending at this checkpoint.
+No SDK downloads retried. No deployment or Stage 3C work. See
+[Stage 3B architecture and acceptance handover](stage_3b_student_queue_eta.md).

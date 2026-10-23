@@ -1,6 +1,9 @@
 import { doc, getDocFromServer, runTransaction, serverTimestamp } from 'firebase/firestore';
 import { orderRef } from './checkout_helpers.mjs';
 export const queueRef=(db,uid='vendor')=>doc(db,'vendorQueues',uid);
+export const progressRef=(db,uid='vendor')=>doc(db,'queueProgress',uid);
+export const progressData=(uid,queue)=>({schemaVersion:1,vendorUid:uid,nextTicket:queue.nextTicket,
+  preparing:queue.preparingOrderId!==null,revision:queue.revision,updatedAt:queue.updatedAt});
 export const initialQueue=()=>({nextTicket:1,preparingOrderId:null,revision:0});
 export const statuses=['Pending','Preparing','Ready','Completed'];
 export function progressWrites(writer,db,order,queue) {
@@ -8,9 +11,13 @@ export function progressWrites(writer,db,order,queue) {
   writer.update(orderRef(db,order.orderId),{status:next,statusRevision:(order.statusRevision??0)+1,
     statusUpdatedAt:serverTimestamp(),
     [next==='Preparing'?'preparingAt':next==='Ready'?'readyAt':'completedAt']:serverTimestamp()});
-  if(next!=='Completed') writer.set(queueRef(db,order.vendorUid),{
+  if(next!=='Completed') {
+    const after={
     schemaVersion:1,vendorUid:order.vendorUid,nextTicket:queue.nextTicket+(next==='Preparing'?1:0),
-    preparingOrderId:next==='Preparing'?order.orderId:null,revision:queue.revision+1,updatedAt:serverTimestamp()});
+    preparingOrderId:next==='Preparing'?order.orderId:null,revision:queue.revision+1,updatedAt:serverTimestamp()};
+    writer.set(queueRef(db,order.vendorUid),after);
+    writer.set(progressRef(db,order.vendorUid),progressData(order.vendorUid,after));
+  }
 }
 // Executable JS counterpart of the Dart processing transaction. The adversarial
 // cases bypass this guard completely and exercise Rules with raw batches.
