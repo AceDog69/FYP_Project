@@ -151,7 +151,11 @@ class _HomeScreenState extends State<HomeScreen> {
           ? StudentHome(repository: widget.repository.catalogRepository,
               onStall: (stall) => Navigator.push(context, MaterialPageRoute(builder: (_) => StudentStallMenu(
                 vendorId: stall.id, repository: widget.repository.catalogRepository!, cart: _cart,
-                onCart: () { Navigator.pop(context); setState(() => _index = 2); }))))
+                onCart: () {
+                  ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                  Navigator.pop(context);
+                  setState(() => _index = 2);
+                }))))
           : Center(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.all(24),

@@ -82,7 +82,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           ]))),
           if (receipt == null) Container(padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
             decoration: const BoxDecoration(color: Colors.white, border: Border(top: BorderSide(color: Color(0xFFE9EAF0)))),
-            child: FilledButton(onPressed: controller.busy || !controller.enabled || (saved == null && !cart.checkoutEligible) ? null : () async {
+            child: FilledButton(key: const ValueKey('checkout-confirm'), onPressed: controller.busy || !controller.enabled || (saved == null && !cart.checkoutEligible) ? null : () async {
               final result = await controller.confirm(_payment);
               if (mounted && result != null) setState(() => _receipt = result);
             }, child: Wrap(alignment: WrapAlignment.center, children: [

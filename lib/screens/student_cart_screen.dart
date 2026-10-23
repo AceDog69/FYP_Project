@@ -73,30 +73,35 @@ class _StudentCartScreenState extends State<StudentCartScreen> {
               StallPicture(line.food.draft.pictureId, width: MediaQuery.sizeOf(context).width < 360 ? 76 : 96, height: 110),
               const SizedBox(width: 12),
               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(line.food.draft.name, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+                Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Expanded(child: Text(line.food.draft.name,
+                    style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700))),
+                  SizedBox(width: 36, height: 36, child: IconButton(
+                    key: ValueKey('cart-remove-${line.food.id}'), tooltip: 'Remove ${line.food.id}',
+                    icon: const Icon(Icons.delete_outline, color: mutedText), padding: EdgeInsets.zero,
+                    onPressed: _busy || cart.checkoutLocked ? null : () => _action(() async {
+                      final confirmed = await confirmCartAction(context, 'Remove item?',
+                        'Remove ${line.food.draft.name} from this unpaid cart?', 'Remove');
+                      if (mounted && confirmed) cart.remove(line.food.id);
+                    }))),
+                ]),
                 const SizedBox(height: 6), Text('${rm(line.food.draft.priceSen)} each',
                   style: const TextStyle(color: primaryOrange, fontSize: 18, fontWeight: FontWeight.w700)),
                 const SizedBox(height: 8),
                 Container(decoration: BoxDecoration(color: const Color(0xFFF7F7F9), borderRadius: BorderRadius.circular(24),
                   border: Border.all(color: const Color(0xFFE9EAF0))), child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  IconButton(tooltip: 'Decrease ${line.food.id}', icon: const Icon(Icons.remove),
+                  IconButton(key: ValueKey('cart-decrease-${line.food.id}'), tooltip: 'Decrease ${line.food.id}', icon: const Icon(Icons.remove),
                     constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
                     onPressed: _busy || cart.checkoutLocked || line.quantity <= 1 ? null : () => _action(() async =>
                       cart.quantity(line.food.id, line.quantity - 1))),
                   Semantics(label: 'Quantity ${line.quantity}', child: Text('${line.quantity}',
                     key: ValueKey('quantity-${line.food.id}'), style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700))),
-                  IconButton(tooltip: 'Increase ${line.food.id}', icon: const Icon(Icons.add, color: primaryOrange),
+                  IconButton(key: ValueKey('cart-increase-${line.food.id}'), tooltip: 'Increase ${line.food.id}', icon: const Icon(Icons.add, color: primaryOrange),
                     constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
                     onPressed: _busy || cart.checkoutLocked || line.quantity >= StudentCart.maxQuantity || cart.warning != null || cart.issue(line) != null
                       ? null : () => _action(() async => cart.quantity(line.food.id, line.quantity + 1))),
                 ])),
               ])),
-              SizedBox(width: 36, child: IconButton(tooltip: 'Remove ${line.food.id}', icon: const Icon(Icons.delete_outline, color: mutedText),
-                padding: EdgeInsets.zero, onPressed: _busy || cart.checkoutLocked ? null : () => _action(() async {
-                  final confirmed = await confirmCartAction(context, 'Remove item?',
-                    'Remove ${line.food.draft.name} from this unpaid cart?', 'Remove');
-                  if (mounted && confirmed) cart.remove(line.food.id);
-                }))),
             ]),
             const SizedBox(height: 8), Text('Subtotal: ${rm(line.subtotalSen)}', style: const TextStyle(color: mutedText)),
             if (cart.issue(line) != null) ...[
@@ -120,7 +125,7 @@ class _StudentCartScreenState extends State<StudentCartScreen> {
       ]))),
       if (cart.lines.isNotEmpty) Container(padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
         decoration: const BoxDecoration(color: Colors.white, border: Border(top: BorderSide(color: Color(0xFFE9EAF0)))),
-        child: FilledButton(onPressed: !widget.checkoutAvailable || !cart.checkoutEligible || cart.checkoutLocked
+        child: FilledButton(key: const ValueKey('cart-review-checkout'), onPressed: !widget.checkoutAvailable || !cart.checkoutEligible || cart.checkoutLocked
           ? null : widget.onCheckout, child: const Text('Review Checkout'))),
     ]);
   });

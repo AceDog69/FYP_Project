@@ -16,9 +16,10 @@ void main() {
   Future<void> openCheckout(WidgetTester tester, stage.TestRepository repo) async {
     populate(repo.catalogRepository); await stage.launch(tester, repo);
     await tester.binding.setSurfaceSize(const Size(412, 915));
+    await tester.pumpAndSettle();
     await stage.tap(tester, 'Alpha Kitchen'); await stage.tap(tester, 'Select Food');
     await stage.tap(tester, 'Add to Cart'); await stage.tap(tester, 'Cart (1)');
-    await stage.tap(tester, 'Review Checkout');
+    await tester.tap(find.byKey(const ValueKey('cart-review-checkout'))); await tester.pumpAndSettle();
   }
   CheckoutRequest draft(stage.TestRepository repo, {String student = 'test-user', String vendor = 'alpha'}) => CheckoutRequest(
     id: repo.orderRepository.newSubmissionId(), studentUid: student, vendorUid: vendor, stallName: 'Synthetic Kitchen',
@@ -32,7 +33,7 @@ void main() {
     expect(find.text('Up to two distinct foods per order, 1–20 units each.'), findsOneWidget);
     expect(find.textContaining('no money is charged'), findsOneWidget);
     expect(find.byType(PaymentMethodCard), findsNWidgets(3));
-    expect(tester.widget<FilledButton>(find.widgetWithText(FilledButton,'Confirm Order')).onPressed, isNull);
+    expect(tester.widget<FilledButton>(find.byKey(const ValueKey('checkout-confirm'))).onPressed, isNull);
     expect(repo.orderRepository.submitCalls, 0);
   });
 
@@ -59,9 +60,9 @@ void main() {
     final repo = stage.TestRepository()..session(stage.profile(AccountRole.student)); addTearDown(repo.dispose);
     repo.orderRepository.enabled = true; repo.orderRepository.pending = Completer<void>();
     await openCheckout(tester, repo);
-    await tester.ensureVisible(find.text('Confirm Order')); await tester.tap(find.text('Confirm Order')); await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('checkout-confirm'))); await tester.pumpAndSettle();
     expect(repo.orderRepository.submitCalls, 1); expect(find.text('Order Confirmed'), findsNothing);
-    expect(tester.widget<FilledButton>(find.widgetWithText(FilledButton,'Confirming with server…')).onPressed, isNull);
+    expect(tester.widget<FilledButton>(find.byKey(const ValueKey('checkout-confirm'))).onPressed, isNull);
     repo.orderRepository.pending!.complete(); await tester.pumpAndSettle();
     expect(find.text('Order Confirmed'), findsOneWidget); expect(find.text('Ticket #1'), findsOneWidget);
     await stage.tap(tester, 'View My Orders'); expect(find.text('My Orders'), findsOneWidget);
@@ -75,7 +76,7 @@ void main() {
   testWidgets('failure retains Cart and request; retry uses same ID before acknowledged success', (tester) async {
     final repo = stage.TestRepository()..session(stage.profile(AccountRole.student)); addTearDown(repo.dispose);
     repo.orderRepository.enabled = true; repo.orderRepository.submitError = const AccountException('Connection interrupted.');
-    await openCheckout(tester, repo); await stage.tap(tester, 'Confirm Order');
+    await openCheckout(tester, repo); await tester.tap(find.byKey(const ValueKey('checkout-confirm'))); await tester.pumpAndSettle();
     expect(find.text('Connection interrupted.'), findsOneWidget); expect(tester.widget<Text>(find.byKey(const ValueKey('commerce-total'))).data, 'RM 8.50');
     final id = repo.orderRepository.submittedIds.single;
     await tester.pageBack(); await tester.pumpAndSettle();
