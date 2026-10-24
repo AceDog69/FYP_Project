@@ -128,13 +128,15 @@ class _OrdersScreenState extends State<OrdersScreen> {
             child: const Text('Unable to verify preparation queue. Retry')),
           if (cursor.data?.cached == true) const Text('Cached queue — connect before changing an order.'),
         ],
-        if (s.data!.cached) const Text('Cached orders — connect to verify current server data.'),
+        Visibility(visible: s.data!.cached, maintainState: true,
+          child: const Text('Cached orders — connect to verify current server data.')),
         if (_error != null) ...[
           Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
           TextButton(onPressed: _busy == null ? () => setState(() { _error = null; _load(); }) : null,
             child: const Text('Refresh orders before retrying')),
         ],
-        if (!widget.vendor) StreamBuilder<MenuData<CheckoutRequest>>(stream: _requests, builder: (context, pending) {
+        if (!widget.vendor) StreamBuilder<MenuData<CheckoutRequest>>(
+          key: const ValueKey('student-pending-checkout-requests'), stream: _requests, builder: (context, pending) {
           if (pending.hasError) {
             return TextButton(onPressed: () => setState(_load), child: const Text('Unable to recover checkouts. Retry'));
           }

@@ -108,9 +108,11 @@ void main() {
     expect(find.descendant(of: card, matching: find.text('RM 8.50')), findsOneWidget);
     final select = find.widgetWithText(OutlinedButton, 'Select Food');
     await reveal(tester, select); expect(tester.getSize(select).height, greaterThanOrEqualTo(48)); await press(tester, select);
-    expect(tester.widget<IconButton>(find.byTooltip('Decrease quantity')).onPressed, isNull);
-    for (var i = 1; i < 20; i++) { await tester.tap(find.byTooltip('Increase quantity')); await tester.pump(); }
-    expect(tester.widget<IconButton>(find.byTooltip('Increase quantity')).onPressed, isNull);
+    Finder quantityButton(String tooltip) => find.ancestor(
+      of: find.byTooltip(tooltip), matching: find.byType(IconButton));
+    expect(tester.widget<IconButton>(quantityButton('Decrease quantity')).onPressed, isNull);
+    for (var i = 1; i < 20; i++) { await tester.tap(quantityButton('Increase quantity')); await tester.pump(); }
+    expect(tester.widget<IconButton>(quantityButton('Increase quantity')).onPressed, isNull);
     expect(find.text('Subtotal: RM 170.00'), findsOneWidget);
     await press(tester, find.text('Add to Cart')); expect(selection.lines.single.quantity, 20);
     await press(tester, find.text('Cart (20)'), delta: -200); expect(cartVisits, 1);
@@ -176,6 +178,7 @@ void main() {
     await tester.pumpAndSettle(); expect(find.text('Not a confirmed order or ticket.'), findsOneWidget);
     await press(tester, find.widgetWithText(TextButton, 'Resume')); expect(resumed?.id, request.id);
     repo.cached = true; repo.emit(); await tester.pumpAndSettle();
+    await reveal(tester, find.text('Cached request — status may be out of date.'));
     expect(find.text('Cached request — status may be out of date.'), findsOneWidget);
     expect(tester.widget<TextButton>(find.widgetWithText(TextButton, 'Resume')).onPressed, isNull);
     expect(find.textContaining('Cached orders'), findsOneWidget); expect(find.text('Ticket #1'), findsNothing);
