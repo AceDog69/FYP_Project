@@ -18,8 +18,11 @@ class ReadyNotice {
 /// discards hasPendingWrites snapshots; cached snapshots never create events here.
 /// No Firestore writes, clocks, checkout requests or private queue reads are used.
 class ReadyNotifications extends ChangeNotifier {
-  ReadyNotifications({required this.studentUid, required this.repository, required this.currentUid,
-    bool foreground = true}) : _foreground = foreground {
+  factory ReadyNotifications({required String studentUid, required OrderRepository? repository,
+    required String? Function() currentUid, bool foreground = true}) =>
+      ReadyNotifications._(studentUid, repository, currentUid, foreground);
+
+  ReadyNotifications._(this.studentUid, this.repository, this.currentUid, this._foreground) {
     unawaited(refresh());
   }
   final String studentUid;
@@ -71,7 +74,7 @@ class ReadyNotifications extends ChangeNotifier {
     _connection = repository == null ? ReadyConnection.unavailable : ReadyConnection.loading;
     notifyListeners();
     try {
-      await old?.cancel();
+      if (old != null) { unawaited(old.cancel().catchError((Object _) {})); }
       if (!sessionIsCurrent || generation != _generation || repository == null) return;
       _subscription = repository!.orders(vendor: false).listen((data) {
         if (_disposed || generation != _generation) return;

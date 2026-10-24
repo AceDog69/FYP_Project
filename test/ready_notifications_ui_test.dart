@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:my_fyp_app/models/confirmed_order.dart';
 import 'package:my_fyp_app/models/user_profile.dart';
@@ -31,6 +32,18 @@ void main() {
   Future<void> press(WidgetTester tester, Finder target, {double delta = 200}) async {
     await reveal(tester, target, delta: delta); await tester.tap(target); await tester.pumpAndSettle();
   }
+  ReadyNotifications activeNotifications(WidgetTester tester) =>
+    tester.widget<ReadyNotificationsScreen>(find.byType(ReadyNotificationsScreen)).notifications;
+  Future<void> tapAndWaitForConnection(WidgetTester tester, String label, ReadyConnection expected) async {
+    final action = find.text(label);
+    await reveal(tester, action);
+    await tester.tap(action);
+    await tester.pump();
+    for (var frame = 0; frame < 20 && activeNotifications(tester).connection != expected; frame++) {
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+    expect(activeNotifications(tester).connection, expected);
+  }
   Future<void> center(WidgetTester tester) async {
     await press(tester, find.text('Profile'));
     await press(tester, find.byKey(const ValueKey('ready-notifications-button')));
@@ -45,6 +58,8 @@ void main() {
   }
 
   testWidgets('Pixel 6 Stall Menu aligns Back title Cart on one row and live quantity preserves 48px targets', (tester) async {
+    final fontLoader = FontLoader('Inter')..addFont(rootBundle.load('assets/fonts/Inter.ttf'));
+    await fontLoader.load();
     final repo = FakeCatalogRepository(); populate(repo); addTearDown(repo.dispose);
     final cart = StudentCart('student', repo); addTearDown(cart.dispose); var visits = 0;
     await tester.binding.setSurfaceSize(const Size(412, 915)); addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -96,7 +111,8 @@ void main() {
     expect(find.byType(SnackBar), findsNothing); expect(indicator(tester).isLabelVisible, true);
     await center(tester); await press(tester, find.widgetWithText(OutlinedButton, 'View Order Details'));
     await tester.pageBack(); await tester.pumpAndSettle();
-    await press(tester, find.text('Refresh Notifications')); expect(find.text('Viewed'), findsOneWidget);
+    await tapAndWaitForConnection(tester, 'Refresh Notifications', ReadyConnection.server);
+    expect(find.text('Viewed'), findsOneWidget);
     expect(find.byType(SnackBar), findsNothing);
   });
 
@@ -105,7 +121,7 @@ void main() {
     dismissAlert(tester); await tester.pumpAndSettle();
     for (var i = 0; i < 3; i++) { repo.orderRepository.emit(); await tester.pumpAndSettle(); }
     await press(tester, find.text('Queue')); await press(tester, find.text('Home'));
-    await center(tester); await press(tester, find.text('Refresh Notifications'));
+    await center(tester); await tapAndWaitForConnection(tester, 'Refresh Notifications', ReadyConnection.server);
     expect(find.byType(SnackBar), findsNothing); expect(find.byKey(ValueKey('notice-${ready.order.id}')), findsOneWidget);
   });
 
@@ -142,7 +158,8 @@ void main() {
     repo.orderRepository.loading = false; repo.orderRepository.emit(); await tester.pumpAndSettle();
     repo.orderRepository.errorTarget = 'orders'; repo.orderRepository.streamError = StateError('offline');
     repo.orderRepository.emit(); await tester.pumpAndSettle(); expect(find.textContaining('Ready updates could not be verified'), findsOneWidget);
-    repo.orderRepository.streamError = null; await press(tester, find.text('Retry Notifications'));
+    repo.orderRepository.streamError = null;
+    await tapAndWaitForConnection(tester, 'Retry Notifications', ReadyConnection.server);
     expect(find.text('Ready for pickup'), findsOneWidget); expect(find.byType(SnackBar), findsNothing);
   });
 
@@ -185,10 +202,13 @@ void main() {
   });
 
   testWidgets('background Ready updates stay in center and resume does not replay an alert', (tester) async {
-    addTearDown(() => tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed));
     final repo = app(receipt: pending); await stage.launch(tester, repo);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
     emit(repo, ready); await tester.pumpAndSettle(); expect(find.byType(SnackBar), findsNothing);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed); await tester.pumpAndSettle();
     expect(find.byType(SnackBar), findsNothing); expect(indicator(tester).isLabelVisible, true);
     final next = notificationReceipt('2', student: 'test-user', ticket: 2); emit(repo, next); await tester.pumpAndSettle();

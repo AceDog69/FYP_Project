@@ -167,12 +167,27 @@ test('concurrent bootstrap and Start cannot leave an initial or stale projection
 });
 
 test('parallel Vendors cannot double-start or detach the projection; stale raw replay fails',async()=>{
-  const {owner,student,orders:[first]}=await setup(1);const second=env.authenticatedContext('vendor').firestore();
-  const results=await Promise.allSettled([advance(owner,first),advance(second,first)]);
-  assert.equal(results.filter(r=>r.status==='fulfilled').length,1);
-  const error=results.find(r=>r.status==='rejected').reason;assert.ok(error.message==='stale-order'||error.code==='permission-denied');
-  assert.equal(budgetDiagnostic.test(error.message),false);
-  assert.equal((await progress(student)).revision,1);await deny(raw(owner,first,initialQueue()));
+  const errors=[];
+  for(let iteration=1;iteration<=3;iteration++) {
+    if(iteration>1) await env.clearFirestore();
+    const {owner,student,orders:[first]}=await setup(1);const second=env.authenticatedContext('vendor').firestore();
+    const results=await Promise.allSettled([advance(owner,first),advance(second,first)]);
+    console.log(`FCFS_CONCURRENCY_DIAGNOSTIC ${JSON.stringify({iteration,results:results.map(result=>result.status==='fulfilled'
+      ? {status:result.status,value:result.value}
+      : {status:result.status,error:{message:result.reason?.message,code:result.reason?.code,
+        name:result.reason?.name,stack:result.reason?.stack}})})}`);
+    assert.equal(results.filter(r=>r.status==='fulfilled').length,1);
+    const error=results.find(r=>r.status==='rejected').reason;errors.push(error);
+    assert.equal(budgetDiagnostic.test(error.message),false);
+    const d=await progress(student),q=(await getDocFromServer(queueRef(owner))).data(),order=await readOrder(owner,first);
+    assert.equal(order.status,'Preparing');assert.equal(order.statusRevision,1);
+    assert.equal(q.revision,1);assert.equal(q.nextTicket,2);assert.equal(q.preparingOrderId,first.orderId);
+    assert.equal(d.revision,q.revision);assert.equal(d.nextTicket,q.nextTicket);assert.equal(d.preparing,true);
+    await deny(raw(owner,first,initialQueue()));
+  }
+  assert.ok(errors.every(error=>error.message==='stale-order'||error.code==='permission-denied'),
+    `Unexpected parallel transition rejections: ${JSON.stringify(errors.map(error=>({message:error.message,
+      code:error.code,name:error.name,stack:error.stack})))}`);
 });
 
 test('Ready/start contention converges to exact per-stall progress without skipped Pending tickets',async()=>{

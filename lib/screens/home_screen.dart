@@ -68,10 +68,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (ids.isEmpty) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || source != _ready || source?.sessionIsCurrent != true || source?.foreground != true ||
-          source?.connection != ReadyConnection.server) return;
+          source?.connection != ReadyConnection.server) { return; }
       final entries = ids.map((id) => source!.notice(id)).whereType<ReadyNotice>()
         .where((n) => !n.viewed && n.order.status == 'Ready').toList();
-      if (entries.isEmpty) return;
+      if (entries.isEmpty) { return; }
       final text = entries.take(3).map((n) => '${n.order.stallName} • Ticket #${n.order.ticket}: Ready for pickup').join('\n');
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(entries.length > 3 ? '$text\nMore Ready updates in Notifications.' : text),
