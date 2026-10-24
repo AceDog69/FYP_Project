@@ -51,7 +51,8 @@ class VendorWorkspaceCard extends StatelessWidget {
     margin: const EdgeInsets.only(bottom: 16), padding: const EdgeInsets.all(16),
     decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16),
       border: Border.all(color: const Color(0xFFE8E8EC))),
-    child: child,
+    child: Material(color: Colors.transparent, clipBehavior: Clip.antiAlias,
+      borderRadius: BorderRadius.circular(8), child: child),
   );
 }
 

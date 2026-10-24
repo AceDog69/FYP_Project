@@ -90,14 +90,15 @@ class _VendorMenuScreenState extends State<VendorMenuScreen> {
                   SizedBox(width: 8), Flexible(child: Text('Manage Categories'))]));
               final addButton = FilledButton(
                 onPressed: safe && categories.isNotEmpty ? () => _editor(categories, stallName ?? '') : null,
-                child: const Row(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.add), SizedBox(width: 8), Text('Add Food')]));
+                child: const Wrap(alignment: WrapAlignment.center, crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 8, children: [Icon(Icons.add), Text('Add Food')]));
               if (constraints.maxWidth < 360 || MediaQuery.textScalerOf(context).scale(14) > 18) {
                 return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
                   categoriesButton, const SizedBox(height: 10), addButton,
                 ]);
               }
-              return Row(children: [Expanded(flex: 3, child: categoriesButton), const SizedBox(width: 12),
-                Expanded(flex: 2, child: addButton)]);
+              return Row(children: [Expanded(child: categoriesButton), const SizedBox(width: 12),
+                Expanded(child: addButton)]);
             }),
             const SizedBox(height: 20),
             Text('Menu Items', style: Theme.of(context).textTheme.titleLarge), const SizedBox(height: 12),
@@ -145,12 +146,12 @@ class _VendorMenuScreenState extends State<VendorMenuScreen> {
                   Wrap(spacing: 12, runSpacing: 8, children: [
                     OutlinedButton(style: OutlinedButton.styleFrom(minimumSize: const Size(100, 48)),
                       onPressed: safe ? () => _editor(categories, stallName ?? '', food) : null,
-                      child: const Row(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.edit_outlined, size: 18),
-                        SizedBox(width: 8), Text('Edit')])),
+                      child: const Wrap(alignment: WrapAlignment.center, crossAxisAlignment: WrapCrossAlignment.center,
+                        spacing: 8, children: [Icon(Icons.edit_outlined, size: 18), Text('Edit')])),
                     OutlinedButton(style: OutlinedButton.styleFrom(minimumSize: const Size(120, 48)),
                       onPressed: safe && _repo!.canDeleteFood ? () => _delete(food) : null,
-                      child: const Row(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.delete_outline, size: 18),
-                        SizedBox(width: 8), Text('Delete Food')])),
+                      child: const Wrap(alignment: WrapAlignment.center, crossAxisAlignment: WrapCrossAlignment.center,
+                        spacing: 8, children: [Icon(Icons.delete_outline, size: 18), Text('Delete Food')])),
                   ]),
                 ])),
             ],

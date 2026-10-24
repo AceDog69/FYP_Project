@@ -171,8 +171,12 @@ void main() {
     for (var i = 0; i < 3; i++) {
       order = progressed(order); repo.receipts[order.id] = OrderReceipt(order, receipt.items); repo.emit();
       await tester.pumpAndSettle();
-      expect(find.widgetWithText(OrderStatusBadge, order.status), findsOneWidget);
-      expect(find.text('Confirmed total: RM 17.00'), findsOneWidget);
+      final badge = find.widgetWithText(OrderStatusBadge, order.status);
+      await tester.scrollUntilVisible(badge, -200, scrollable: find.byType(Scrollable).first);
+      expect(badge, findsOneWidget);
+      final total = find.text('Confirmed total: RM 17.00');
+      await tester.scrollUntilVisible(total, 200, scrollable: find.byType(Scrollable).first);
+      expect(total, findsOneWidget);
     }
     expect(find.text('Start Preparing'), findsNothing); expect(find.text('Mark as Ready'), findsNothing);
     expect(tester.takeException(), isNull);

@@ -68,8 +68,13 @@ void main() {
     await stage.tap(tester, 'View My Orders'); expect(find.text('My Orders'), findsOneWidget);
     expect(find.textContaining('Rice Bowl'), findsOneWidget); expect(find.textContaining('Pending'), findsOneWidget);
     await stage.tap(tester, 'View Details'); expect(find.text('Order Details'), findsOneWidget);
-    expect(find.textContaining('simulated, no money charged'), findsOneWidget);
-    await tester.pageBack(); await tester.pumpAndSettle(); await stage.tap(tester, 'Cart');
+    final paymentNote = find.textContaining('simulated, no money charged');
+    await tester.scrollUntilVisible(paymentNote, 200, scrollable: find.byType(Scrollable).first);
+    expect(paymentNote, findsOneWidget);
+    final back = find.byTooltip('Back');
+    await tester.scrollUntilVisible(back, -200, scrollable: find.byType(Scrollable).first);
+    await tester.ensureVisible(back); await tester.pumpAndSettle();
+    await tester.tap(back); await tester.pumpAndSettle(); await stage.tap(tester, 'Cart');
     expect(find.text('Your cart is empty'), findsOneWidget);
   });
 
@@ -113,7 +118,8 @@ void main() {
     expect(find.text('Vendor Orders'), findsOneWidget); expect(find.text('Ticket #1'), findsOneWidget);
     final next = draft(repo,student:'other-student',vendor:'test-user');
     repo.orderRepository.receipts[next.id] = receiptFor(next,2); repo.orderRepository.emit(); await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('Ticket #2')); expect(find.text('Ticket #2'), findsOneWidget);
+    await tester.scrollUntilVisible(find.text('Ticket #2'), 200, scrollable: find.byType(Scrollable).first);
+    expect(find.text('Ticket #2'), findsOneWidget);
     expect(find.text('Start Preparing'), findsNothing); expect(find.text('Mark as Ready'), findsNothing);
     expect(tester.widget<BottomNavigationBar>(find.byType(BottomNavigationBar)).items.length,4);
   });
