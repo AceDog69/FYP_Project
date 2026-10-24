@@ -7,6 +7,7 @@ import '../theme/app_theme.dart';
 import '../widgets/auth_widgets.dart';
 import '../widgets/stall_picture_picker.dart';
 import '../widgets/delete_confirmation.dart';
+import '../widgets/vendor_workspace_widgets.dart';
 import 'vendor_food_editor.dart';
 
 class VendorMenuScreen extends StatefulWidget {
@@ -79,56 +80,79 @@ class _VendorMenuScreenState extends State<VendorMenuScreen> {
           final cached = stall.data?.isCached != false || cats.data?.cached != false || foods.data?.cached != false;
           final safe = !failed && !loading && !cached && !_busy && !_confirmingDelete;
           final stallName = !stall.hasError ? stall.data?.name : null;
-          return ListView(padding: const EdgeInsets.all(20), children: [
-            Container(padding: const EdgeInsets.all(20), decoration: BoxDecoration(color: primaryOrange,
-              borderRadius: BorderRadius.circular(20)), child: Column(crossAxisAlignment: CrossAxisAlignment.start,
-              children: [const Text('Manage Menu', style: TextStyle(color: Colors.white, fontSize: 24,
-                fontWeight: FontWeight.w700)), if (stallName != null) Text(stallName,
-                  style: const TextStyle(color: Colors.white))])),
+          return VendorWorkspacePage(header: VendorWorkspaceHeader('Manage Menu', subtitle: stallName), children: [
+            LayoutBuilder(builder: (context, constraints) {
+              final categoriesButton = OutlinedButton(
+                style: OutlinedButton.styleFrom(minimumSize: const Size(double.infinity, 48)),
+                onPressed: safe ? () => Navigator.push(context, MaterialPageRoute(builder: (_) =>
+                  MenuCategoriesScreen(repository: _repo!))) : null,
+                child: const Row(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.grid_view_outlined, size: 20),
+                  SizedBox(width: 8), Flexible(child: Text('Manage Categories'))]));
+              final addButton = FilledButton(
+                onPressed: safe && categories.isNotEmpty ? () => _editor(categories, stallName ?? '') : null,
+                child: const Row(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.add), SizedBox(width: 8), Text('Add Food')]));
+              if (constraints.maxWidth < 360 || MediaQuery.textScalerOf(context).scale(14) > 18) {
+                return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                  categoriesButton, const SizedBox(height: 10), addButton,
+                ]);
+              }
+              return Row(children: [Expanded(flex: 3, child: categoriesButton), const SizedBox(width: 12),
+                Expanded(flex: 2, child: addButton)]);
+            }),
             const SizedBox(height: 20),
-            Wrap(spacing: 12, runSpacing: 8, children: [
-              OutlinedButton(onPressed: safe ? () => Navigator.push(context, MaterialPageRoute(builder: (_) =>
-                MenuCategoriesScreen(repository: _repo!))) : null, child: const Text('Manage Categories')),
-              OutlinedButton(onPressed: safe && categories.isNotEmpty
-                ? () => _editor(categories, stallName ?? '') : null, child: const Text('Add Food')),
-            ]),
-            const SizedBox(height: 16), ErrorMessage(_error),
+            Text('Menu Items', style: Theme.of(context).textTheme.titleLarge), const SizedBox(height: 12),
+            ErrorMessage(_error),
             if (_busy) const LinearProgressIndicator(),
-            if (failed) ...[
+            if (failed) VendorWorkspaceCard(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
               const Text('Menu could not be loaded. Check your connection and retry.'),
               TextButton(onPressed: () => setState(_load), child: const Text('Retry')),
-            ] else if (loading) const Center(child: CircularProgressIndicator())
+            ]))
+            else if (loading) const Padding(padding: EdgeInsets.all(32), child: Center(child: CircularProgressIndicator()))
             else ...[
-              if (cached) const Text('Cached menu — may be out of date. Connect to make changes.'),
-              if (categories.isEmpty) const Text('Create a menu category before adding food.'),
-              if (foods.data!.items.isEmpty) ...[
-                const Padding(padding: EdgeInsets.symmetric(vertical: 32), child: Text('No food items yet',
-                  textAlign: TextAlign.center, style: TextStyle(fontSize: 20))),
-              ],
-              if (!_repo!.canDeleteFood)
-                const Text('Food deletion is unavailable until security testing is complete.',
-                  style: TextStyle(color: mutedText)),
-              for (final food in foods.data!.items) Card(child: Padding(padding: const EdgeInsets.all(16),
+              if (cached) const Padding(padding: EdgeInsets.only(bottom: 12),
+                child: Text('Cached menu — may be out of date. Connect to make changes.')),
+              if (categories.isEmpty) const Padding(padding: EdgeInsets.only(bottom: 12),
+                child: Text('Create a menu category before adding food.')),
+              if (foods.data!.items.isEmpty)
+                const VendorWorkspaceCard(child: Padding(padding: EdgeInsets.symmetric(vertical: 24),
+                  child: Text('No food items yet', textAlign: TextAlign.center, style: TextStyle(fontSize: 20)))),
+              if (!_repo!.canDeleteFood) const Padding(padding: EdgeInsets.only(bottom: 12), child: Text(
+                'Food deletion is unavailable until security testing is complete.', style: TextStyle(color: mutedText))),
+              for (final food in foods.data!.items) VendorWorkspaceCard(key: ValueKey('menu-food-${food.id}'),
                 child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
                   Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    StallPicture(food.draft.pictureId, width: 84, height: 80), const SizedBox(width: 12),
+                    StallPicture(food.draft.pictureId, width: 96, height: 100), const SizedBox(width: 14),
                     Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text(food.draft.name, style: Theme.of(context).textTheme.titleMedium),
+                      Text(food.draft.name, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                      const SizedBox(height: 6),
                       Text(categories.any((c) => c.id == food.draft.categoryId)
-                        ? categories.firstWhere((c) => c.id == food.draft.categoryId).name : 'Category unavailable'),
-                      Text(rm(food.draft.priceSen), style: const TextStyle(color: primaryOrange, fontWeight: FontWeight.w700)),
+                        ? categories.firstWhere((c) => c.id == food.draft.categoryId).name : 'Category unavailable',
+                        style: const TextStyle(color: mutedText)),
+                      const SizedBox(height: 8),
+                      Text(rm(food.draft.priceSen), style: const TextStyle(color: primaryOrange, fontSize: 21,
+                        fontWeight: FontWeight.w700)),
                     ])),
                   ]),
+                  const SizedBox(height: 8),
                   SwitchListTile(contentPadding: EdgeInsets.zero,
-                    title: Text(food.draft.available ? 'Available' : 'Unavailable'), value: food.draft.available,
+                    secondary: Icon(food.draft.available ? Icons.check_circle_outline : Icons.pause_circle_outline,
+                      color: food.draft.available ? const Color(0xFF176B35) : mutedText),
+                    title: Text(food.draft.available ? 'Available' : 'Unavailable',
+                      style: TextStyle(color: food.draft.available ? const Color(0xFF176B35) : mutedText,
+                        fontWeight: FontWeight.w600)), value: food.draft.available,
                     onChanged: safe ? (v) => _action(() => _repo!.setAvailable(food, v)) : null),
-                  Wrap(spacing: 12, children: [
-                    OutlinedButton(onPressed: safe ? () => _editor(categories, stallName ?? '', food) : null,
-                      child: const Text('Edit')),
-                    OutlinedButton(onPressed: safe && _repo!.canDeleteFood ? () => _delete(food) : null,
-                      child: const Text('Delete Food')),
+                  const Divider(height: 20),
+                  Wrap(spacing: 12, runSpacing: 8, children: [
+                    OutlinedButton(style: OutlinedButton.styleFrom(minimumSize: const Size(100, 48)),
+                      onPressed: safe ? () => _editor(categories, stallName ?? '', food) : null,
+                      child: const Row(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.edit_outlined, size: 18),
+                        SizedBox(width: 8), Text('Edit')])),
+                    OutlinedButton(style: OutlinedButton.styleFrom(minimumSize: const Size(120, 48)),
+                      onPressed: safe && _repo!.canDeleteFood ? () => _delete(food) : null,
+                      child: const Row(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.delete_outline, size: 18),
+                        SizedBox(width: 8), Text('Delete Food')])),
                   ]),
-                ]))),
+                ])),
             ],
           ]);
         }))),

@@ -117,7 +117,7 @@ class _HomeScreenState extends State<HomeScreen> {
   );
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: (_vendor && (_index == 0 || _index == 2 || _index == 3)) || (!_vendor && _index == 2) ? null : AppBar(
+    appBar: _vendor || (!_vendor && _index == 2) ? null : AppBar(
       automaticallyImplyLeading: false,
       title: const Brand(),
       bottom: const PreferredSize(

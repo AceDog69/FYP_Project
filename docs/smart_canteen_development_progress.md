@@ -2,7 +2,7 @@
 
 Updated 22 October 2026 (Asia/Singapore). Supervisor meeting: 28 October 2026.
 
-**Latest state:** the Stage 3B candidate section at the end supersedes historical checkpoint
+**Latest state:** the focused Vendor UI polish section at the end supersedes historical checkpoint
 limitations/results below. Both Vendor destructive actions remain gated.
 
 ## Milestones and source
@@ -966,3 +966,43 @@ all local checks passing and zero budget diagnostics before accepting the candid
 Checkout and both deletion gates stay closed in checked-in Rules; existing safe
 emulator-only launcher is preserved. No production Firebase writes, billing,
 Functions or real payments. STOP: Stage 3C Ready notifications remain unstarted.
+
+## Focused Vendor UI polish — 24 October 2026
+
+Base independently verified on GitHub:
+`3be2117e7d868110be9ea678c8ce97beef4f8596`
+(`fix: stabilize Stage 3B cart and checkout UI`). Its five changed blobs and full
+Git tree were imported exactly because shell Git could not reach proxy port 8080.
+New branch: feature/final-ui-vendor-polish. The final delivery SHA identifies the
+candidate containing this handover; use git rev-parse HEAD after fetching it.
+
+Vendor Menu, Vendor Orders and shared Student/Vendor Order Details now use the
+accepted Dashboard/Profile orange rounded header, white bordered cards, spacing
+and type hierarchy. Menu has clearer pictures/prices/availability and responsive
+actions. Orders has readable tickets/status/items/totals and horizontal filters.
+Details groups the live immutable receipt into overview, information, items and
+simulated payment sections, with real dates/statuses and cached/error feedback.
+Details remains read-only; Vendor transitions stay in Orders. Existing disabled
+Food/Category Delete and all checkout/FCFS business rules are preserved.
+
+All eight supplied screenshots were actually opened: two accepted Dashboard /
+Profile, three current Details/Orders/Menu, and V2-02 / V2-04 / V3-02 references.
+No personal account data or images from those screenshots were committed.
+[UI polish handover](final_ui_vendor_polish.md) records exact filenames, visual
+adaptations, changed files and beginner Windows/Pixel 6 acceptance instructions.
+
+Cloud actual results: 11/11 existing Node launcher/budget/transport checks passed;
+Git whitespace, protected-source comparisons and a supplemental Dart lexical
+delimiter audit passed. Flutter analysis/compilation/tests, Firebase emulator tests
+and Android/visual acceptance were NOT executed: required SDK/CLI/dependencies are
+unavailable. Added 12 focused widget cases; all previous Flutter test files and
+Firebase security coverage remain unchanged. No assumed new Flutter/Firebase
+pass counts or repeated SDK downloads.
+
+A 76-file source audit preserves Rules, services/models, assets, dependencies,
+launcher, accepted Dashboard/Profile, Student Queue and latest Cart/Checkout fixes.
+Menu/category callbacks and order/FCFS eligibility are unchanged. Home has only
+the Vendor Orders AppBar adjustment. No gates, transactions, cursor/projection,
+queue calculations, security tests, production data/rules, billing or paid services
+were changed. No merge, rebase, force-push or deployment. Stop for local review:
+Student Queue readability and Stage 3C notifications remain unstarted.
