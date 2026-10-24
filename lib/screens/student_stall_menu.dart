@@ -7,6 +7,8 @@ import '../services/student_cart.dart';
 import '../theme/app_theme.dart';
 import '../widgets/auth_widgets.dart';
 import '../widgets/stall_picture_picker.dart';
+import '../widgets/student_workspace_widgets.dart';
+import '../widgets/vendor_workspace_widgets.dart';
 import 'student_cart_screen.dart';
 
 class StudentStallMenu extends StatefulWidget {
@@ -32,13 +34,14 @@ class _StudentStallMenuState extends State<StudentStallMenu> {
     _categories = widget.repository.categories(widget.vendorId);
     _foods = widget.repository.foods(widget.vendorId);
   }
+  Widget _page(List<Widget> children) => VendorWorkspacePage(
+    header: StudentWorkspaceHeader('Stall Menu', icon: Icons.restaurant_menu_outlined, back: true,
+      action: AnimatedBuilder(animation: widget.cart, builder: (context, _) => TextButton(
+        style: TextButton.styleFrom(foregroundColor: Colors.white, minimumSize: const Size(48, 48)),
+        onPressed: widget.onCart, child: Text('Cart (${widget.cart.itemCount})')))), children: children);
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Stall Menu'), actions: [
-      AnimatedBuilder(animation: widget.cart, builder: (context, _) => TextButton(
-        onPressed: widget.onCart, child: Text('Cart (${widget.cart.itemCount})'))),
-    ]),
-    body: StreamBuilder<MenuData<CatalogStall>>(stream: _stall, builder: (context, stall) =>
+    body: SafeArea(child: StreamBuilder<MenuData<CatalogStall>>(stream: _stall, builder: (context, stall) =>
       StreamBuilder<MenuData<MenuCategory>>(stream: _categories, builder: (context, cats) =>
         StreamBuilder<MenuData<MenuFood>>(stream: _foods, builder: (context, foods) {
           final failed = stall.hasError || cats.hasError || foods.hasError;
@@ -46,10 +49,10 @@ class _StudentStallMenuState extends State<StudentStallMenu> {
             stall.connectionState == ConnectionState.waiting || cats.connectionState == ConnectionState.waiting ||
             foods.connectionState == ConnectionState.waiting;
           if (failed) {
-            return Center(child: TextButton(onPressed: () => setState(_load), child: const Text('Unable to load menu. Retry')));
+            return _page([VendorWorkspaceCard(child: TextButton(onPressed: () => setState(_load), child: const Text('Unable to load menu. Retry')))]);
           }
-          if (waiting) return const Center(child: CircularProgressIndicator());
-          if (stall.data!.items.isEmpty) return const Center(child: Text('This stall is no longer listed.'));
+          if (waiting) return _page([const Padding(padding: EdgeInsets.all(32), child: Center(child: CircularProgressIndicator()))]);
+          if (stall.data!.items.isEmpty) return _page([const VendorWorkspaceCard(child: Text('This stall is no longer listed.'))]);
           final listing = stall.data!.items.single;
           final cached = stall.data!.cached || cats.data!.cached || foods.data!.cached;
           final categories = cats.data!.items;
@@ -57,37 +60,47 @@ class _StudentStallMenuState extends State<StudentStallMenu> {
           final items = foods.data!.items.where((f) => f.draft.available &&
             categories.any((c) => c.id == f.draft.categoryId) &&
             (selected == null || f.draft.categoryId == selected)).toList();
-          return ListView(padding: const EdgeInsets.all(20), children: [
-            StallPicture(listing.stall.displayPictureId, height: 160), const SizedBox(height: 12),
-            Text(listing.stall.name, style: Theme.of(context).textTheme.headlineSmall),
-            Text(listing.stall.category), Text(listing.stall.isOpen ? 'Open' : 'Closed'),
-            Text('Initial preparation: ${listing.stall.preparationMinutes} minutes'),
-            if (cached) const Text('Cached menu — connect to select food.'),
-            if (!listing.stall.isOpen) const Text('Stall is Closed. Browse only; new selections are unavailable.'),
-            const SizedBox(height: 16),
-            SingleChildScrollView(scrollDirection: Axis.horizontal, child: Row(children: [
-              Padding(padding: const EdgeInsets.only(right: 8), child: ChoiceChip(label: const Text('All'),
-                selected: selected == null, showCheckmark: false, onSelected: (_) => setState(() => _category = null))),
-              for (final category in categories) Padding(padding: const EdgeInsets.only(right: 8), child: ChoiceChip(
-                label: Text(category.name), selected: selected == category.id, showCheckmark: false,
-                onSelected: (_) => setState(() => _category = category.id))),
+          return _page([
+            VendorWorkspaceCard(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                StallPicture(listing.stall.displayPictureId, width: 80, height: 88), const SizedBox(width: 14),
+                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(listing.stall.name, style: Theme.of(context).textTheme.titleLarge), const SizedBox(height: 6),
+                  Text(listing.stall.category, style: const TextStyle(color: mutedText)), const SizedBox(height: 10),
+                  StallStatusBadge(listing.stall.isOpen),
+                ])),
+              ]), const SizedBox(height: 14),
+              Text('Initial preparation: ${listing.stall.preparationMinutes} minutes', style: const TextStyle(color: mutedText)),
             ])),
+            if (cached) const StudentNotice('Cached menu — connect to select food.'),
+            if (!listing.stall.isOpen) const StudentNotice('Stall is Closed. Browse only; new selections are unavailable.'),
+            StudentFilterBar(key: const ValueKey('menu-categories'), labels: ['All', ...categories.map((c) => c.name)],
+              values: ['', ...categories.map((c) => c.id)], selected: selected ?? '',
+              onSelected: (id) => setState(() => _category = id.isEmpty ? null : id)),
             const SizedBox(height: 12),
             if (items.isEmpty) const Padding(padding: EdgeInsets.all(32),
               child: Text('No available food items', textAlign: TextAlign.center)),
-            for (final food in items) Card(child: Padding(padding: const EdgeInsets.all(16), child: Column(
+            for (final food in items) VendorWorkspaceCard(key: ValueKey('student-food-${food.id}'), child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                StallPicture(food.draft.pictureId, height: 140), const SizedBox(height: 12),
-                Text(food.draft.name, style: Theme.of(context).textTheme.titleLarge),
-                Text(food.draft.description), Text(categories.firstWhere((c) => c.id == food.draft.categoryId).name),
-                Text(rm(food.draft.priceSen), style: const TextStyle(color: primaryOrange, fontWeight: FontWeight.w700)),
-                OutlinedButton(onPressed: cached || !listing.stall.isOpen ? null : () => showDialog<void>(
+                Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  StallPicture(food.draft.pictureId, width: 88, height: 96), const SizedBox(width: 14),
+                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(food.draft.name, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                    const SizedBox(height: 6),
+                    Text(categories.firstWhere((c) => c.id == food.draft.categoryId).name, style: const TextStyle(color: mutedText)),
+                    const SizedBox(height: 10),
+                    Text(rm(food.draft.priceSen), style: const TextStyle(color: primaryOrange, fontSize: 21, fontWeight: FontWeight.w700)),
+                  ])),
+                ]), const SizedBox(height: 12),
+                Text(food.draft.description, style: const TextStyle(color: mutedText)), const SizedBox(height: 14),
+                OutlinedButton(style: OutlinedButton.styleFrom(minimumSize: const Size(double.infinity, 48)),
+                  onPressed: cached || !listing.stall.isOpen ? null : () => showDialog<void>(
                   context: context, useRootNavigator: false, builder: (_) => _FoodSelection(
                     vendorId: widget.vendorId, foodId: food.id, repository: widget.repository, cart: widget.cart)),
                   child: const Text('Select Food')),
-              ]))),
+              ])),
           ]);
-        }))),
+        })))),
   );
 }
 

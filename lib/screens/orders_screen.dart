@@ -6,6 +6,7 @@ import '../services/auth_repository.dart';
 import '../services/order_repository.dart';
 import '../widgets/stall_picture_picker.dart';
 import '../widgets/vendor_workspace_widgets.dart';
+import '../widgets/student_workspace_widgets.dart';
 import '../theme/app_theme.dart';
 
 String orderTime(ConfirmedOrder order) {
@@ -86,21 +87,23 @@ class _OrdersScreenState extends State<OrdersScreen> {
   }
   Widget _vendorPage(List<Widget> children) => VendorWorkspacePage(
     header: const VendorWorkspaceHeader('Vendor Orders', subtitle: 'Your stall’s order inbox'), children: children);
+  Widget _studentPage(List<Widget> children) => VendorWorkspacePage(
+    header: const StudentWorkspaceHeader('My Orders', icon: Icons.receipt_long_outlined,
+      subtitle: 'Your confirmed orders and tickets'), children: children);
   @override
   Widget build(BuildContext context) => StreamBuilder<MenuData<ConfirmedOrder>>(stream: _orders, builder: (context, s) {
     if (widget.repository == null || s.hasError) {
       final retry = TextButton(onPressed: () => setState(_load), child: const Text('Unable to load orders. Retry'));
-      return widget.vendor ? _vendorPage([VendorWorkspaceCard(child: retry)]) : Center(child: retry);
+      return widget.vendor ? _vendorPage([VendorWorkspaceCard(child: retry)]) : _studentPage([VendorWorkspaceCard(child: retry)]);
     }
     if (!s.hasData || s.connectionState == ConnectionState.waiting) {
       const loading = Center(child: CircularProgressIndicator());
-      return widget.vendor ? _vendorPage([const Padding(padding: EdgeInsets.all(32), child: loading)]) : loading;
+      return widget.vendor ? _vendorPage([const Padding(padding: EdgeInsets.all(32), child: loading)]) : _studentPage([const Padding(padding: EdgeInsets.all(32), child: loading)]);
     }
     final orders = s.data!.items.toList()..sort((a, b) => widget.vendor
       ? a.ticket.compareTo(b.ticket) : b.createdAt.compareTo(a.createdAt));
     return StreamBuilder<VendorQueue>(stream: _queue, builder: (context, cursor) {
       final children = <Widget>[
-        if (!widget.vendor) Text('My Orders', style: Theme.of(context).textTheme.headlineSmall),
         if (widget.vendor) ...[
           Scrollbar(controller: _filters, thumbVisibility: true, child: SingleChildScrollView(
             key: const ValueKey('order-status-filters'), controller: _filters,
@@ -138,11 +141,15 @@ class _OrdersScreenState extends State<OrdersScreen> {
           if (!pending.hasData) {
             return const Text('Checking for unconfirmed requests…');
           }
-          return Column(children: [for (final request in pending.data!.items) Card(child: ListTile(
-            title: Text('Unconfirmed checkout: ${request.stallName}'), subtitle: Text(pending.data!.cached
-              ? 'Cached request — status may be out of date.' : 'Not a confirmed order or ticket.'),
-            trailing: TextButton(onPressed: pending.data!.cached ? null : () => widget.onResume?.call(request), child: const Text('Resume')),
-          ))]);
+          return Column(children: [for (final request in pending.data!.items) VendorWorkspaceCard(child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              Text('Unconfirmed checkout: ${request.stallName}', style: const TextStyle(fontWeight: FontWeight.w700)),
+              const SizedBox(height: 8), Text(pending.data!.cached
+                ? 'Cached request — status may be out of date.' : 'Not a confirmed order or ticket.'),
+              const SizedBox(height: 12),
+              TextButton(style: TextButton.styleFrom(minimumSize: const Size(double.infinity, 48)),
+                onPressed: pending.data!.cached ? null : () => widget.onResume?.call(request), child: const Text('Resume')),
+            ]))]);
         }),
         if (orders.isEmpty) const Padding(padding: EdgeInsets.all(32), child: Text('No orders yet', textAlign: TextAlign.center)),
         if (widget.vendor && orders.isNotEmpty && _filter != 'All' && !orders.any((o) => o.status == _filter))
@@ -150,7 +157,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
         for (final order in orders.where((o) => !widget.vendor || _filter == 'All' || o.status == _filter))
           _orderCard(context, order, s, cursor),
       ];
-      return widget.vendor ? _vendorPage(children) : ListView(padding: const EdgeInsets.all(20), children: children);
+      return widget.vendor ? _vendorPage(children) : _studentPage(children);
     });
   });
 
@@ -159,13 +166,14 @@ class _OrdersScreenState extends State<OrdersScreen> {
     final content = Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       Wrap(alignment: WrapAlignment.spaceBetween, crossAxisAlignment: WrapCrossAlignment.center, spacing: 12, runSpacing: 8,
         children: [Text('Ticket #${order.ticket}', style: Theme.of(context).textTheme.headlineSmall), OrderStatusBadge(order.status)]),
-      if (!widget.vendor) Text(order.stallName),
+      if (!widget.vendor) ...[const SizedBox(height: 10), Text(order.stallName,
+        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700))],
       const SizedBox(height: 6), Text('Placed at ${orderTime(order)}', style: Theme.of(context).textTheme.bodySmall),
-      if (widget.vendor) const SizedBox(height: 12),
-      _OrderItems(order: order, repository: widget.repository!, polished: widget.vendor),
+      const SizedBox(height: 12),
+      _OrderItems(order: order, repository: widget.repository!, polished: true),
       const Divider(),
-      Text('Confirmed total: ${rm(order.totalSen)}', style: TextStyle(fontWeight: FontWeight.w700,
-        fontSize: widget.vendor ? 20 : null, color: widget.vendor ? primaryOrange : null)),
+      Text('Confirmed total: ${rm(order.totalSen)}', style: const TextStyle(fontWeight: FontWeight.w700,
+        fontSize: 20, color: primaryOrange)),
       if (widget.vendor && widget.repository!.canProcessOrders && order.nextStatus != null) ...[
         const SizedBox(height: 12),
         FilledButton(key: ValueKey('advance-${order.id}'),
@@ -178,13 +186,11 @@ class _OrdersScreenState extends State<OrdersScreen> {
           const Text('Wait for the earlier ticket and an empty preparation slot.'),
       ],
       const SizedBox(height: 8),
-      OutlinedButton(style: widget.vendor ? OutlinedButton.styleFrom(minimumSize: const Size(double.infinity, 48)) : null,
+      OutlinedButton(style: OutlinedButton.styleFrom(minimumSize: const Size(double.infinity, 48)),
         onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => OrderDetails(
           order: order, repository: widget.repository!, vendor: widget.vendor))), child: const Text('View Details')),
     ]);
-    return widget.vendor ? VendorWorkspaceCard(key: ValueKey(order.id), child: content)
-      : Card(key: ValueKey(order.id), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16),
-        side: const BorderSide(color: Color(0xFFE8E8ED))), child: Padding(padding: const EdgeInsets.all(16), child: content));
+    return VendorWorkspaceCard(key: ValueKey(order.id), child: content);
   }
 }
 

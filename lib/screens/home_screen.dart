@@ -4,6 +4,9 @@ import '../services/auth_repository.dart';
 import '../services/error_messages.dart';
 import '../theme/app_theme.dart';
 import '../widgets/auth_widgets.dart';
+import '../widgets/student_workspace_widgets.dart';
+import '../widgets/vendor_workspace_widgets.dart';
+import '../widgets/vendor_profile_widgets.dart';
 import 'vendor_dashboard.dart';
 import 'vendor_profile.dart';
 import 'vendor_menu_screen.dart';
@@ -82,49 +85,24 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Widget _profile() => Center(
-    child: SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 440),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const Align(child: IconTile(icon: Icons.person_outline)),
-            const SizedBox(height: 24),
-            Text('Profile', style: Theme.of(context).textTheme.headlineSmall),
-            const SizedBox(height: 24),
-            for (final entry in <String, String>{
-              'Full Name': widget.profile.fullName,
-              'Email Address': widget.profile.email,
-              'Phone Number': widget.profile.phoneNumber,
-              'Role': _vendor ? 'Vendor' : 'Student',
-            }.entries) ...[
-              Text(
-                entry.key,
-                style: const TextStyle(color: mutedText, fontSize: 12),
-              ),
-              const SizedBox(height: 6),
-              SelectableText(entry.value),
-              const SizedBox(height: 20),
-            ],
-            ErrorMessage(_error),
-            PrimaryButton('Logout', onPressed: _logout, loading: _busy),
-          ],
-        ),
-      ),
-    ),
+  Widget _profile() => VendorWorkspacePage(
+    header: const StudentWorkspaceHeader('Profile & Settings', icon: Icons.person_outline),
+    children: [
+      VendorSection(title: 'Account Information', children: [
+        VendorInformation('Full Name', widget.profile.fullName), const Divider(height: 1),
+        VendorInformation('Email Address', widget.profile.email), const Divider(height: 1),
+        VendorInformation('Phone Number', widget.profile.phoneNumber), const Divider(height: 1),
+        const VendorInformation('Role', 'Student'),
+      ]),
+      ErrorMessage(_error),
+      OutlinedButton.icon(onPressed: _busy ? null : _logout,
+        icon: const Icon(Icons.logout), label: Text(_busy ? 'Logging out…' : 'Logout'),
+        style: OutlinedButton.styleFrom(foregroundColor: Colors.red,
+          side: const BorderSide(color: Colors.red), minimumSize: const Size(double.infinity, 48))),
+    ],
   );
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: _vendor || (!_vendor && _index == 2) ? null : AppBar(
-      automaticallyImplyLeading: false,
-      title: const Brand(),
-      bottom: const PreferredSize(
-        preferredSize: Size.fromHeight(1),
-        child: Divider(height: 1, color: Color(0xFFF0F0F0)),
-      ),
-    ),
     body: SafeArea(
       bottom: false,
       child: _vendor && _index == 0

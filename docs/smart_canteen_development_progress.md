@@ -1,9 +1,9 @@
 # Smart Canteen development progress
 
-Updated 22 October 2026 (Asia/Singapore). Supervisor meeting: 28 October 2026.
+Updated 24 October 2026 (Asia/Singapore). Supervisor meeting: 28 October 2026.
 
-**Latest state:** the focused Vendor UI polish section at the end supersedes historical checkpoint
-limitations/results below. Both Vendor destructive actions remain gated.
+**Latest state:** the focused Student UI polish section at the end supersedes historical checkpoint
+limitations/results below. Production checkout and both Vendor destructive actions remain gated.
 
 ## Milestones and source
 
@@ -1006,3 +1006,45 @@ the Vendor Orders AppBar adjustment. No gates, transactions, cursor/projection,
 queue calculations, security tests, production data/rules, billing or paid services
 were changed. No merge, rebase, force-push or deployment. Stop for local review:
 Student Queue readability and Stage 3C notifications remain unstarted.
+
+## Focused Student main-screen UI polish — 24 October 2026
+
+Source: GitHub-confirmed `feature/final-ui-vendor-polish` at
+`92710b06ffdddc6be837d906074b244c63bafdc1`, including its local scrolling/Material/layout fixes.
+New branch: `feature/final-ui-student-polish`. The delivery report supplies the final verified GitHub SHA.
+The user reports 114 passing Flutter tests for the base; those are not Cloud results for this candidate.
+
+Home, Stall Menu, Student Orders, Profile and Queue now follow the accepted orange rounded headers,
+20px spacing and white bordered cards. Home/Menu pictures are compact, stall status and prices readable,
+and food selection still uses the original dialog/validation. My Orders keeps real immutable snapshots,
+actual status, totals and unconfirmed recovery. Profile shows only existing read-only fields and safe Logout.
+Queue prioritizes stall/ticket/status, large orders-ahead and approximate until-Ready values;
+long explanations/timestamps move into How this estimate works. Essential stale, unavailable,
+synchronizing and elapsed-estimate warnings remain visible. Refresh and shared Details are preserved.
+
+Inspected all five images in `To_Improve_Student_Screen.zip`, all three in `Approved_Screen.zip`
+(Vendor Menu, Vendor Orders, shared Details), and reopened the earlier accessible Dashboard/Profile
+screenshots from `Improved_Current_Screen.zip`. No reference gap. No personal screenshot data committed.
+
+Rules, Firebase services/transactions, FCFS cursor/projection, queue/ETA formulas, security tests,
+checkout limits, dependencies, assets and local emulator launcher are unchanged. Accepted Vendor
+rendering and shared Details are preserved; Cart/Checkout source and navigation callbacks are unchanged.
+All existing Flutter tests remain byte-for-byte intact. Production checkout and Food/Category Delete
+remain gated. No production connection/deploy, merge, migration, paid service or Stage 3C implementation.
+
+Cloud checks actually executed: existing Node launcher/budget-detector/offline-transport checks **11/11 passed**
+after granting their required local process/socket execution; the first sandbox attempt could not execute two
+files. `git diff --check`, a protected-source audit (239 unchanged tracked files) and a Dart lexical delimiter
+check passed. The lexical check is not compilation. **Flutter analyze/tests, Firebase emulator suites and
+Android/manual visual acceptance were not run** because their tooling is unavailable. The new
+`test/student_ui_polish_test.dart` contains 20 unexecuted widget cases covering the five screens, Pixel 6,
+320×640/1.6× text, real queue values/statuses, warnings/refresh, selection guards, recovery and session/Logout.
+No new emulator Rules-budget result is claimed. The historical stalled Chrome/Dart test remains unverified.
+
+See [Student UI verification and Pixel 6 guide](final_ui_student_polish.md) for exact Windows commands,
+inspected filenames, changed-file list, expected behaviors and safe demo shutdown.
+Run `flutter analyze`, the focused widget file and full `flutter test`, then optionally the unchanged
+`npm run test:queue` suite (zero budget diagnostics required). Manually review the five screens and
+accepted-screen regressions on the Pixel 6 using the existing demo-only launcher and debug entrypoint.
+Candidate is ready for local review, not accepted on Android yet. Stop here; Stage 3C Ready notifications
+remain the next separate task after review. No notification, payment, billing or production work is authorized by this batch.

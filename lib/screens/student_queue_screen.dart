@@ -5,6 +5,8 @@ import '../models/queue_progress.dart';
 import '../models/vendor_menu.dart';
 import '../services/order_repository.dart';
 import '../theme/app_theme.dart';
+import '../widgets/student_workspace_widgets.dart';
+import '../widgets/vendor_workspace_widgets.dart';
 import 'orders_screen.dart';
 
 String queueTime(Timestamp timestamp) {
@@ -35,27 +37,25 @@ class _StudentQueueScreenState extends State<StudentQueueScreen> {
       _load();
     }
   }
+  Widget _page(List<Widget> children) => VendorWorkspacePage(
+    header: const StudentWorkspaceHeader('My Queue', icon: Icons.people_outline,
+      subtitle: 'Follow your confirmed tickets. Each stall has its own queue.'), children: children);
   @override
   Widget build(BuildContext context) => StreamBuilder<MenuData<ConfirmedOrder>>(stream: _orders, builder: (context, s) {
     if (widget.repository == null || s.hasError) {
-      return Center(child: TextButton(onPressed: () => setState(_load), child: const Text('Unable to load your queue. Retry')));
+      return _page([VendorWorkspaceCard(child: TextButton(onPressed: () => setState(_load), child: const Text('Unable to load your queue. Retry')))]);
     }
     if (!s.hasData || s.connectionState == ConnectionState.waiting) {
-      return const Center(child: CircularProgressIndicator());
+      return _page([const Padding(padding: EdgeInsets.all(32), child: Center(child: CircularProgressIndicator()))]);
     }
     final own = s.data!.items.where((o) => o.studentUid == widget.studentUid).toList()
       ..sort((a, b) => a.vendorUid == b.vendorUid ? a.ticket.compareTo(b.ticket) : a.stallName.compareTo(b.stallName));
     final orders = own.where((o) => (o.status == 'Completed') == _history).toList();
-    return ListView(padding: const EdgeInsets.all(20), children: [
-      Text('My Queue', style: Theme.of(context).textTheme.headlineSmall),
-      const SizedBox(height: 8),
-      const Text('Follow your confirmed tickets. Each stall has its own queue.'),
+    return _page([
+      StudentFilterBar(key: const ValueKey('queue-filters'), labels: const ['Active', 'History'],
+        selected: _history ? 'History' : 'Active', onSelected: (label) => setState(() => _history = label == 'History')),
       const SizedBox(height: 12),
-      Wrap(spacing: 8, children: [
-        ChoiceChip(label: const Text('Active'), selected: !_history, onSelected: (_) => setState(() => _history = false)),
-        ChoiceChip(label: const Text('History'), selected: _history, onSelected: (_) => setState(() => _history = true)),
-      ]),
-      if (s.data!.cached) const Text('Cached orders — last known status only. Connect to verify current progress.'),
+      if (s.data!.cached) const StudentNotice('Cached orders — last known status only. Connect to verify current progress.'),
       if (orders.isEmpty) Padding(padding: const EdgeInsets.all(32), child: Text(
         _history ? 'No completed tickets yet' : 'No active tickets yet', textAlign: TextAlign.center)),
       for (final order in orders) _QueueCard(key: ValueKey('${widget.studentUid}/${order.id}'),
@@ -95,36 +95,55 @@ class _QueueCardState extends State<_QueueCard> {
     final estimate = estimateQueue(order, widget.cachedOrder ? QueueProgress.unavailable(order.vendorUid, cached: true)
       : s.data, checkedAt);
     final verified = !widget.cachedOrder && (terminal || (!s.hasError && s.hasData && s.connectionState != ConnectionState.waiting));
-    return Card(key: ValueKey('queue-${order.id}'), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16),
-      side: const BorderSide(color: Color(0xFFE8E8ED))), child: Padding(padding: const EdgeInsets.all(16), child: Column(
+    final hasEstimate = verified && estimate.minutes != null;
+    final ahead = verified && estimate.ahead != null ? '${estimate.ahead}' : 'Unavailable';
+    final readyText = terminal ? '${widget.cachedOrder ? 'Last known: ' : ''}${order.status == 'Ready' ? 'Ready for pickup' : 'Completed'}'
+      : hasEstimate ? 'Approx. ${estimate.minutes} min until Ready'
+      : estimate.overdue ? 'Initial estimate elapsed' : 'Waiting time unavailable';
+    return VendorWorkspaceCard(key: ValueKey('queue-${order.id}'), child: Column(
       crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        Text(order.stallName, style: Theme.of(context).textTheme.titleLarge), const SizedBox(height: 8),
+        Text(order.stallName, style: Theme.of(context).textTheme.titleLarge), const SizedBox(height: 12),
         Wrap(alignment: WrapAlignment.spaceBetween, crossAxisAlignment: WrapCrossAlignment.center, spacing: 12, runSpacing: 8,
-          children: [Text('Ticket #${order.ticket}', style: Theme.of(context).textTheme.headlineSmall), OrderStatusBadge(order.status)]),
+          children: [Text('Ticket #${order.ticket}', style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w800)),
+            OrderStatusBadge(order.status)]),
         const SizedBox(height: 16),
-        if (widget.cachedOrder) const Text('Cached ticket — position and ETA are unverified.'),
-        if (!terminal && !s.hasData && !s.hasError) const Text('Loading queue progress…'),
-        if (s.hasError && !terminal) const Text('Unable to verify this stall’s queue progress.'),
-        if (s.data?.cached == true) const Text('Cached queue — connect to verify progress.'),
-        Text('Orders ahead: ${verified && estimate.ahead != null ? estimate.ahead : 'Unavailable'}',
-          style: const TextStyle(fontWeight: FontWeight.w700)),
-        const SizedBox(height: 8),
-        Text(terminal ? '${widget.cachedOrder ? 'Last known: ' : ''}${order.status == 'Ready' ? 'Ready for pickup' : 'Completed'}'
-          : verified && estimate.minutes != null ? 'Approx. ${estimate.minutes} min until Ready'
-          : estimate.overdue ? 'Initial estimate elapsed' : 'Waiting time unavailable',
-          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: primaryOrange)),
-        const SizedBox(height: 8), Text(estimate.message),
-        if (!terminal && verified && estimate.minutes != null) Text(
-          'Estimate checked: ${queueTime(Timestamp.fromDate(checkedAt))}', style: Theme.of(context).textTheme.bodySmall),
-        Text('Initial preparation allowance: ${order.preparationMinutes} min (recorded at confirmation).',
-          style: Theme.of(context).textTheme.bodySmall),
-        const SizedBox(height: 8),
-        Text('Order updated: ${queueTime(order.statusUpdatedAt ?? order.createdAt)}', style: Theme.of(context).textTheme.bodySmall),
-        if (s.data?.updatedAt != null) Text('Queue updated: ${queueTime(s.data!.updatedAt!)}', style: Theme.of(context).textTheme.bodySmall),
-        TextButton(onPressed: widget.onRefresh,
+        if (widget.cachedOrder) const StudentNotice('Cached ticket — position and ETA are unverified.'),
+        if (!terminal && !s.hasData && !s.hasError) const StudentNotice('Loading queue progress…'),
+        if (s.hasError && !terminal) const StudentNotice('Unable to verify this stall’s queue progress.'),
+        if (s.data?.cached == true) const StudentNotice('Cached queue — connect to verify progress.'),
+        Container(padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(color: lightOrange, borderRadius: BorderRadius.circular(12)),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Text.rich(TextSpan(children: [
+              const TextSpan(text: 'Orders ahead: ', style: TextStyle(fontSize: 15, color: Color(0xFF343A46))),
+              TextSpan(text: ahead, style: TextStyle(fontSize: estimate.ahead == null || !verified ? 18 : 32,
+                fontWeight: FontWeight.w800, color: const Color(0xFF151515))),
+            ]), key: ValueKey('queue-ahead-${order.id}')),
+            const Divider(height: 24),
+            Text(readyText, key: ValueKey('queue-eta-${order.id}'), style: TextStyle(fontSize: 24,
+              fontWeight: FontWeight.w800, color: hasEstimate || terminal ? primaryOrange : const Color(0xFF596273))),
+          ])),
+        if (!terminal && !hasEstimate) ...[const SizedBox(height: 12), Text(estimate.message)],
+        const SizedBox(height: 12),
+        ExpansionTile(key: ValueKey('queue-explanation-${order.id}'), tilePadding: EdgeInsets.zero,
+          childrenPadding: const EdgeInsets.only(bottom: 12), title: const Text('How this estimate works',
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+          children: [Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            if (terminal || hasEstimate) Text(estimate.message),
+            if (!terminal && hasEstimate) ...[const SizedBox(height: 8), Text(
+              'Estimate checked: ${queueTime(Timestamp.fromDate(checkedAt))}', style: Theme.of(context).textTheme.bodySmall)],
+            const SizedBox(height: 8),
+            Text('Initial preparation allowance: ${order.preparationMinutes} min (recorded at confirmation).',
+              style: Theme.of(context).textTheme.bodySmall),
+            const SizedBox(height: 8),
+            Text('Order updated: ${queueTime(order.statusUpdatedAt ?? order.createdAt)}', style: Theme.of(context).textTheme.bodySmall),
+            if (s.data?.updatedAt != null) Text('Queue updated: ${queueTime(s.data!.updatedAt!)}', style: Theme.of(context).textTheme.bodySmall),
+          ])]),
+        TextButton(style: TextButton.styleFrom(minimumSize: const Size(double.infinity, 48)), onPressed: widget.onRefresh,
           child: const Text('Refresh Queue')),
-        OutlinedButton(onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) =>
+        OutlinedButton(style: OutlinedButton.styleFrom(minimumSize: const Size(double.infinity, 48)),
+          onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) =>
           OrderDetails(order: order, repository: widget.repository))), child: const Text('View Order Details')),
-      ])));
+      ]));
   });
 }
