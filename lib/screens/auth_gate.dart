@@ -28,10 +28,15 @@ class AuthGate extends StatelessWidget {
       }
       // Scope detail routes and Student dialogs to the authenticated UID. A
       // logout/account change disposes the whole navigator, including the cart.
-      return Navigator(
-        key: ValueKey('session-${repository.uid}'),
-        onGenerateRoute: (_) => MaterialPageRoute<void>(
-          builder: (_) => ProfileGate(key: ValueKey(repository.uid), repository: repository)),
+      return ScaffoldMessenger(
+        // Transient messages belong to the same UID-scoped route tree. Disposing
+        // a session also disposes queued Ready alerts before another login.
+        key: ValueKey('session-messages-${repository.uid}'),
+        child: Navigator(
+          key: ValueKey('session-${repository.uid}'),
+          onGenerateRoute: (_) => MaterialPageRoute<void>(
+            builder: (_) => ProfileGate(key: ValueKey(repository.uid), repository: repository)),
+        ),
       );
     },
   );

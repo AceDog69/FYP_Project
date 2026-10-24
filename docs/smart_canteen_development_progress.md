@@ -2,7 +2,7 @@
 
 Updated 24 October 2026 (Asia/Singapore). Supervisor meeting: 28 October 2026.
 
-**Latest state:** the focused Student UI polish section at the end supersedes historical checkpoint
+**Latest state:** the Stage 3C Ready notifications section at the end supersedes historical checkpoint
 limitations/results below. Production checkout and both Vendor destructive actions remain gated.
 
 ## Milestones and source
@@ -1048,3 +1048,54 @@ Run `flutter analyze`, the focused widget file and full `flutter test`, then opt
 accepted-screen regressions on the Pixel 6 using the existing demo-only launcher and debug entrypoint.
 Candidate is ready for local review, not accepted on Android yet. Stop here; Stage 3C Ready notifications
 remain the next separate task after review. No notification, payment, billing or production work is authorized by this batch.
+
+## Stage 3C Ready notifications and Stall Menu header — 24 October 2026
+
+Verified remote base: latest `feature/final-ui-student-polish` at
+`a5847df924b0a22a86d1135f40bbd5c4884c8ed5` (`fix: stabilize student UI quantity and cached request tests`).
+Both locally repaired source/test files were imported exactly before editing.
+Candidate branch: `feature/stage-3c-ready-notifications`; delivery report gives the verified GitHub SHA.
+User-reported prior Windows acceptance: **134/134 Flutter tests**, **104/104 Firebase security cases**,
+zero Rules-budget diagnostics, accepted Android checkout/FCFS/queue/UI. These are base results, not
+Cloud executions of the new candidate.
+
+Implemented the isolated Stall Menu Back/title/live Cart row with measured-width and enlarged-text
+fallback, preserving 48px controls and existing menu/Cart behavior. Other headers are unchanged.
+
+Implemented a session-scoped read-only Student Ready controller using existing authenticated order streams.
+Canonical Ready/Completed status, revision and Ready timestamp supply records; no notification documents,
+client notification writes, queue/cursor reads or new permissions. Existing Firebase stream metadata filtering
+rejects pending writes; cached snapshots cannot create events. Deterministic UID/order/Ready-timestamp event
+identities suppress repeats. First confirmed snapshots and first-seen Ready orders populate the center without
+inventing a new transition. Observed foreground Pending/Preparing → Ready changes show actual stall/ticket
+alerts. Background/resume rebaselines without replay. Student Profile has an unread indicator and Notifications
+entry; the center has Ready/History, actual current status, timestamps, Viewed state, retry and shared Details.
+Ready → Completed preserves event/read state. Existing five-tab navigation remains intact. UID-scoped transient
+message state, controller disposal and generation/session guards prevent previous-account alerts/routes leaking.
+
+Viewed/announced flags are **in-memory session state**, not durable or cross-device receipts. Existing Ready
+orders can be unread again after restart/logout, without a popup. Fresh offline sessions await server confirmation;
+only already confirmed records in a running session remain as clearly stale information. Alerts are best-effort
+in-app events, not OS push or guaranteed background delivery. No FCM, notification permissions, Cloud Functions,
+paid services, new dependencies, real payments or production deployment.
+
+Rules, existing Firebase services/transactions, Vendor FCFS, queue/ETA formulas, limits, security gates, assets,
+launcher and accepted layouts are unchanged. All previously passing Flutter/security test source files are
+preserved byte-for-byte. Production checkout and both Vendor deletion gates remain disabled.
+
+Cloud actually executed: existing launcher/budget-detector/offline-transport Node checks **11/11 passed** with
+approved local process/socket permissions; `git diff --check`; protected-source audit (244 unchanged tracked
+files); lexical Dart delimiter check. The lexical check is not analysis/compilation. New tests: **20 controller +
+15 widget cases**, written but **unexecuted**. Flutter/Dart, Firebase CLI/dependencies and Android are unavailable;
+no `flutter analyze`, Flutter tests, Firebase suite, Android acceptance or rendered screenshot comparison was run.
+No new Rules-budget result or historical Chrome/Dart integration pass is claimed. SDK/dependencies were not upgraded.
+
+See [Stage 3C Windows and two-client Pixel 6 guide](stage_3c_ready_notifications.md) for the exact changed files,
+Windows Flutter/security commands, duplicate/read-state design and limitations. The foreground notification
+scenario requires Pixel 6 Student plus another simultaneously signed-in Vendor client on the same local demo.
+Do not log Student out to process the order and expect a foreground transition popup on reopening. Verify
+Vendor Open Stall → two Student tickets → earliest Preparing → Ready alert/Details → Completed/History,
+then account isolation, initial snapshots, offline/cache, duplicates and enlarged text.
+
+Candidate awaits local Windows/Android review. Stop after Stage 3C; no unrelated feature, production activation,
+deployment or additional service work is part of this authorization.

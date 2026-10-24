@@ -19,6 +19,8 @@ import '../models/confirmed_order.dart';
 import 'checkout_screen.dart';
 import 'orders_screen.dart';
 import 'student_queue_screen.dart';
+import '../services/ready_notifications.dart';
+import 'ready_notifications_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({
@@ -32,15 +34,71 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   late final _cart = StudentCart(widget.profile.uid, widget.repository.catalogRepository);
   late final _checkout = CheckoutController(_cart, widget.repository.orderRepository);
   int _index = 0;
   bool _busy = false;
   String? _error;
   bool get _vendor => widget.profile.role == AccountRole.vendor;
+  ReadyNotifications? _ready;
   @override
-  void dispose() { _checkout.dispose(); _cart.dispose(); super.dispose(); }
+  void initState() {
+    super.initState(); WidgetsBinding.instance.addObserver(this); _listenForReady();
+  }
+  void _listenForReady() {
+    _ready?.removeListener(_readyChanged); _ready?.dispose();
+    _ready = _vendor ? null : ReadyNotifications(studentUid: widget.profile.uid,
+      repository: widget.repository.orderRepository, currentUid: () => widget.repository.uid,
+      foreground: WidgetsBinding.instance.lifecycleState == null || WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed);
+    _ready?.addListener(_readyChanged);
+  }
+  @override
+  void didUpdateWidget(covariant HomeScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.profile.uid != widget.profile.uid || oldWidget.profile.role != widget.profile.role ||
+        oldWidget.repository != widget.repository) { _listenForReady(); }
+  }
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) { _ready?.setForeground(state == AppLifecycleState.resumed); }
+  void _readyChanged() {
+    if (!mounted) return;
+    setState(() {});
+    final source = _ready, ids = _ready?.takeAlerts() ?? [];
+    if (ids.isEmpty) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || source != _ready || source?.sessionIsCurrent != true || source?.foreground != true ||
+          source?.connection != ReadyConnection.server) return;
+      final entries = ids.map((id) => source!.notice(id)).whereType<ReadyNotice>()
+        .where((n) => !n.viewed && n.order.status == 'Ready').toList();
+      if (entries.isEmpty) return;
+      final text = entries.take(3).map((n) => '${n.order.stallName} • Ticket #${n.order.ticket}: Ready for pickup').join('\n');
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(entries.length > 3 ? '$text\nMore Ready updates in Notifications.' : text),
+        action: SnackBarAction(label: 'View', onPressed: () {
+          if (!mounted || source != _ready || source?.sessionIsCurrent != true) return;
+          if (entries.length == 1) { _openReady(entries.single.order.id); } else { _openNotifications(); }
+        }),
+      ));
+    });
+  }
+  void _openReady(String orderId) {
+    final notice = _ready?.notice(orderId), repository = widget.repository.orderRepository;
+    if (notice == null || repository == null || _ready?.sessionIsCurrent != true) return;
+    _ready!.markViewed(orderId);
+    Navigator.push(context, MaterialPageRoute(builder: (_) => OrderDetails(order: notice.order, repository: repository)));
+  }
+  void _openNotifications() {
+    final source = _ready;
+    if (source?.sessionIsCurrent != true) return;
+    Navigator.push(context, MaterialPageRoute(builder: (_) => ReadyNotificationsScreen(notifications: source!, onOpen: _openReady)));
+  }
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _ready?.removeListener(_readyChanged); _ready?.dispose();
+    _checkout.dispose(); _cart.dispose(); super.dispose();
+  }
   void _openCheckout([CheckoutRequest? request]) {
     if (request != null) {
       try { _checkout.resume(request); }
@@ -94,6 +152,8 @@ class _HomeScreenState extends State<HomeScreen> {
         VendorInformation('Phone Number', widget.profile.phoneNumber), const Divider(height: 1),
         const VendorInformation('Role', 'Student'),
       ]),
+      ReadyNotificationButton(unread: _ready?.unreadCount ?? 0, onPressed: _busy ? null : _openNotifications),
+      const SizedBox(height: 16),
       ErrorMessage(_error),
       OutlinedButton.icon(onPressed: _busy ? null : _logout,
         icon: const Icon(Icons.logout), label: Text(_busy ? 'Logging out…' : 'Logout'),
@@ -181,7 +241,11 @@ class _HomeScreenState extends State<HomeScreen> {
         items: List.generate(
           _labels.length,
           (i) => BottomNavigationBarItem(
-            icon: Icon(_icons[i], size: 23),
+            tooltip: !_vendor && i == 4 ? 'Profile, ${_ready?.unreadCount ?? 0} unread notifications' : null,
+            icon: !_vendor && i == 4 ? Badge(key: const ValueKey('student-notification-indicator'),
+              isLabelVisible: (_ready?.unreadCount ?? 0) > 0,
+              label: Text((_ready?.unreadCount ?? 0) > 99 ? '99+' : '${_ready?.unreadCount ?? 0}'),
+              backgroundColor: primaryOrange, child: Icon(_icons[i], size: 23)) : Icon(_icons[i], size: 23),
             label: _labels[i],
           ),
         ),

@@ -9,6 +9,7 @@ import '../widgets/auth_widgets.dart';
 import '../widgets/stall_picture_picker.dart';
 import '../widgets/student_workspace_widgets.dart';
 import '../widgets/vendor_workspace_widgets.dart';
+import '../widgets/stall_menu_header.dart';
 import 'student_cart_screen.dart';
 
 class StudentStallMenu extends StatefulWidget {
@@ -35,10 +36,8 @@ class _StudentStallMenuState extends State<StudentStallMenu> {
     _foods = widget.repository.foods(widget.vendorId);
   }
   Widget _page(List<Widget> children) => VendorWorkspacePage(
-    header: StudentWorkspaceHeader('Stall Menu', icon: Icons.restaurant_menu_outlined, back: true,
-      action: AnimatedBuilder(animation: widget.cart, builder: (context, _) => TextButton(
-        style: TextButton.styleFrom(foregroundColor: Colors.white, minimumSize: const Size(48, 48)),
-        onPressed: widget.onCart, child: Text('Cart (${widget.cart.itemCount})')))), children: children);
+    header: AnimatedBuilder(animation: widget.cart, builder: (context, _) =>
+      StallMenuHeader(itemCount: widget.cart.itemCount, onCart: widget.onCart)), children: children);
   @override
   Widget build(BuildContext context) => Scaffold(
     body: SafeArea(child: StreamBuilder<MenuData<CatalogStall>>(stream: _stall, builder: (context, stall) =>
