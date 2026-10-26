@@ -16,8 +16,7 @@ bool realOrderingPilotAllowed({required bool enabled, required String declaredPr
 /// Only normal main.dart constructs this repository; main_emulator.dart is unchanged.
 class RealOrderingPilotAuthRepository extends FirebaseAuthRepository {
   RealOrderingPilotAuthRepository(super.auth, super.db);
-  @override
-  late final OrderRepository orderRepository = _PilotOrders(db, () => uid, () =>
+  late final OrderRepository _pilotOrders = _PilotOrders(db, () => uid, () =>
     realOrderingPilotAllowed(
       enabled: const bool.fromEnvironment('REAL_ORDERING_PILOT', defaultValue: false),
       declaredProject: const String.fromEnvironment('REAL_ORDERING_PROJECT', defaultValue: ''),
@@ -26,6 +25,8 @@ class RealOrderingPilotAuthRepository extends FirebaseAuthRepository {
       android: !kIsWeb && defaultTargetPlatform == TargetPlatform.android,
       firestoreHost: db.settings.host, sslEnabled: db.settings.sslEnabled,
     ));
+  @override
+  OrderRepository get orderRepository => _pilotOrders;
 }
 
 class _PilotOrders extends FirebaseOrderRepository {
