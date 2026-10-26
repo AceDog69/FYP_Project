@@ -1,8 +1,8 @@
 # Smart Canteen development progress
 
-Updated 24 October 2026 (Asia/Singapore). Supervisor meeting: 28 October 2026.
+Updated 26 October 2026 (Asia/Singapore). Supervisor meeting: 28 October 2026.
 
-**Latest state:** the Stage 3C Ready notifications section at the end supersedes historical checkpoint
+**Latest state:** the real Firebase pilot preparation section at the end supersedes historical checkpoint
 limitations/results below. Production checkout and both Vendor destructive actions remain gated.
 
 ## Milestones and source
@@ -1099,3 +1099,31 @@ then account isolation, initial snapshots, offline/cache, duplicates and enlarge
 
 Candidate awaits local Windows/Android review. Stop after Stage 3C; no unrelated feature, production activation,
 deployment or additional service work is part of this authorization.
+
+## Real Firebase ordering pilot preparation — 26 October 2026
+
+Verified GitHub base `017fd9fe78a0e6116544c4246cf52eb959280218` on Stage 3C, including all four
+locally repaired files. New branch `feature/real-firebase-apk-pilot`; final delivery identifies remote SHA.
+Prior user Windows evidence: 169 Flutter and 104 security cases passed, zero budget diagnostics.
+Real Auth/menu/browsing and deployed closed checkout Rules are user-reported current state.
+
+Prepared an explicit Android-only normal-entrypoint pilot wrapper requiring BOTH build defines and actual
+Auth/Firestore default-app project fyp-app-9d78a with canonical TLS endpoint. Normal builds stay disabled;
+existing Firebase transaction classes and all emulator entry/configuration remain unchanged. Added a
+separate reviewable Rules candidate and only-rules config; automated comparison proves the ONLY Rules
+change is checkout false→true, retaining menu deletion false and all ownership/snapshot/counter/FCFS guards.
+Generator accepts only the exact project and never deploys. App flags are not server authorization:
+opening the candidate authorizes secure checkout for all otherwise eligible project users, not an allowlist.
+
+Cloud executed 16/16 Node checks, whitespace and protected-source/lexical checks. Four Flutter policy/controller
+integration tests are written but unexecuted. Flutter analyze/tests, Firebase emulator evaluation/budget suite,
+Android/release APK/sign/install and live pilot acceptance were not run: tooling unavailable. No new 169/104
+candidate pass or zero-budget claim. Existing test sources, default Rules, limits, queue/ETA/Ready logic,
+package/config/assets/signing, deletion gates and local demo launcher preserved. No live Firebase access,
+deployment, data changes, APK build/publication, paid service, credentials or signing keys added.
+
+See [real Firebase pilot + Windows CMD APK guide](real_firebase_apk_pilot.md) for source boundaries,
+activation, full local security verification, actual deployed-Rules backup, explicit-project manual Rules
+deploy/Console verification and rollback, two-client Pixel 6 acceptance and private debug-signed release APK
+build/install/hash checks. Local Rules and Flutter tests plus manual review are required before any deployment.
+Stop at preparation; live activation and APK acceptance remain manual and unverified.

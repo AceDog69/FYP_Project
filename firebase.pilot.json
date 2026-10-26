@@ -1,0 +1,5 @@
+{
+  "firestore": {
+    "rules": "pilot/firestore.ordering.rules"
+  }
+}

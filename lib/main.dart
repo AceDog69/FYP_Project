@@ -4,7 +4,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'screens/auth_gate.dart';
 import 'services/auth_repository.dart';
-import 'services/firebase_auth_repository.dart';
+import 'services/real_ordering_pilot.dart';
 import 'theme/app_theme.dart';
 import 'widgets/auth_widgets.dart';
 
@@ -13,12 +13,22 @@ Future<void> main() async {
   try {
     // Android uses the existing google-services.json. No invented options.
     await Firebase.initializeApp();
+    final auth = FirebaseAuth.instance;
+    final db = FirebaseFirestore.instance;
+    // Bind the pilot's transport explicitly before any repository starts reads.
+    // Without both intentional defines, normal SDK configuration is untouched.
+    if (const bool.fromEnvironment('REAL_ORDERING_PILOT', defaultValue: false) &&
+        const String.fromEnvironment('REAL_ORDERING_PROJECT') == orderingPilotProject &&
+        db.app.options.projectId == orderingPilotProject) {
+      db.settings = const Settings(host: 'firestore.googleapis.com', sslEnabled: true);
+    }
+    final repository = RealOrderingPilotAuthRepository(auth, db);
+    if (const bool.fromEnvironment('REAL_ORDERING_PILOT', defaultValue: false)) {
+      debugPrint('Real ordering pilot: ${repository.orderRepository.canCheckout ? 'enabled' : 'disabled'}; project: ${db.app.options.projectId}');
+    }
     runApp(
       SmartCanteenApp(
-        repository: FirebaseAuthRepository(
-          FirebaseAuth.instance,
-          FirebaseFirestore.instance,
-        ),
+        repository: repository,
       ),
     );
   } catch (_) {
