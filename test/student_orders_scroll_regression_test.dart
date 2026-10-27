@@ -2,12 +2,24 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:my_fyp_app/models/confirmed_order.dart';
+import 'package:my_fyp_app/models/vendor_menu.dart';
 import 'package:my_fyp_app/screens/orders_screen.dart';
 import 'package:my_fyp_app/theme/app_theme.dart';
 import 'package:my_fyp_app/widgets/student_workspace_widgets.dart';
 import 'package:my_fyp_app/widgets/vendor_workspace_widgets.dart';
 import 'student_queue_test.dart' as queue;
 import 'support/fake_order_repository.dart';
+
+class _SingleSubscriptionPendingOrders extends FakeOrderRepository {
+  _SingleSubscriptionPendingOrders(super.currentUid);
+  int pendingStreamsCreated = 0;
+
+  @override
+  Stream<MenuData<CheckoutRequest>> pendingRequests() {
+    pendingStreamsCreated++;
+    return Stream.value(const MenuData<CheckoutRequest>([]));
+  }
+}
 
 OrderReceipt _receiptAt(int ticket, int createdAtMs) {
   final receipt = receiptFor(queue.queueRequest('$ticket'), ticket);
@@ -35,7 +47,7 @@ void main() {
       await tester.binding.setSurfaceSize(viewport);
       addTearDown(() => tester.binding.setSurfaceSize(null));
 
-      final repository = FakeOrderRepository(() => 'student');
+      final repository = _SingleSubscriptionPendingOrders(() => 'student');
       addTearDown(repository.dispose);
       final baseTime = DateTime(2026, 10, 27).millisecondsSinceEpoch;
       for (var ticket = 1; ticket <= 12; ticket++) {
@@ -89,6 +101,8 @@ void main() {
         await tester.pump(const Duration(milliseconds: 90));
       }
       await assertNoSettledGap();
+      expect(repository.pendingStreamsCreated, greaterThan(1),
+          reason: 'A virtualized pending-request cell must acquire a fresh single-subscription stream when rebuilt.');
 
       // Apply status changes and insert a newest order while the list is in motion.
       await tester.fling(scrollable, const Offset(0, -1200), 1200);

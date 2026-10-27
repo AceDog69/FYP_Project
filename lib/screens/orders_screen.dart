@@ -44,7 +44,6 @@ class OrdersScreen extends StatefulWidget {
 }
 class _OrdersScreenState extends State<OrdersScreen> {
   late Stream<MenuData<ConfirmedOrder>>? _orders;
-  late Stream<MenuData<CheckoutRequest>>? _requests;
   late Stream<VendorQueue>? _queue;
   String? _busy, _error;
   String _filter = 'All';
@@ -62,7 +61,6 @@ class _OrdersScreenState extends State<OrdersScreen> {
   }
   void _load() {
     _orders = widget.repository?.orders(vendor: widget.vendor);
-    _requests = widget.vendor ? null : widget.repository?.pendingRequests();
     _queue = widget.vendor && widget.repository?.canProcessOrders == true ? widget.repository?.queue() : null;
   }
   Future<void> _advance(ConfirmedOrder order) async {
@@ -137,24 +135,9 @@ class _OrdersScreenState extends State<OrdersScreen> {
           TextButton(onPressed: _busy == null ? () => setState(() { _error = null; _load(); }) : null,
             child: const Text('Refresh orders before retrying')),
         ],
-        if (!widget.vendor) StreamBuilder<MenuData<CheckoutRequest>>(
-          key: const ValueKey('student-pending-checkout-requests'), stream: _requests, builder: (context, pending) {
-          if (pending.hasError) {
-            return TextButton(onPressed: () => setState(_load), child: const Text('Unable to recover checkouts. Retry'));
-          }
-          if (!pending.hasData) {
-            return const Text('Checking for unconfirmed requests…');
-          }
-          return Column(children: [for (final request in pending.data!.items) VendorWorkspaceCard(child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-              Text('Unconfirmed checkout: ${request.stallName}', style: const TextStyle(fontWeight: FontWeight.w700)),
-              const SizedBox(height: 8), Text(pending.data!.cached
-                ? 'Cached request — status may be out of date.' : 'Not a confirmed order or ticket.'),
-              const SizedBox(height: 12),
-              TextButton(style: TextButton.styleFrom(minimumSize: const Size(double.infinity, 48)),
-                onPressed: pending.data!.cached ? null : () => widget.onResume?.call(request), child: const Text('Resume')),
-            ]))]);
-        }),
+        if (!widget.vendor) _PendingCheckoutRequests(
+          key: const ValueKey('student-pending-checkout-requests'),
+          repository: widget.repository!, onResume: widget.onResume),
         if (orders.isEmpty) const Padding(padding: EdgeInsets.all(32), child: Text('No orders yet', textAlign: TextAlign.center)),
         if (widget.vendor && orders.isNotEmpty && _filter != 'All' && !orders.any((o) => o.status == _filter))
           const Padding(padding: EdgeInsets.all(24), child: Text('No orders with this status')),
@@ -196,6 +179,60 @@ class _OrdersScreenState extends State<OrdersScreen> {
     ]);
     return VendorWorkspaceCard(key: ValueKey(order.id), child: content);
   }
+}
+
+/// This cell can be disposed and rebuilt by the scrolling ListView. Create its
+/// single-subscription stream with the State so a remounted cell gets a fresh
+/// subscription instead of re-listening to the stream from an earlier cell.
+class _PendingCheckoutRequests extends StatefulWidget {
+  const _PendingCheckoutRequests({super.key, required this.repository, this.onResume});
+  final OrderRepository repository;
+  final ValueChanged<CheckoutRequest>? onResume;
+
+  @override
+  State<_PendingCheckoutRequests> createState() => _PendingCheckoutRequestsState();
+}
+
+class _PendingCheckoutRequestsState extends State<_PendingCheckoutRequests> {
+  late Stream<MenuData<CheckoutRequest>> _requests;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void didUpdateWidget(covariant _PendingCheckoutRequests oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.repository != widget.repository) _load();
+  }
+
+  void _load() {
+    _requests = widget.repository.pendingRequests();
+  }
+
+  @override
+  Widget build(BuildContext context) => StreamBuilder<MenuData<CheckoutRequest>>(
+    stream: _requests,
+    builder: (context, pending) {
+      if (pending.hasError) {
+        return TextButton(onPressed: () => setState(_load),
+          child: const Text('Unable to recover checkouts. Retry'));
+      }
+      if (!pending.hasData) return const Text('Checking for unconfirmed requests…');
+      return Column(children: [for (final request in pending.data!.items)
+        VendorWorkspaceCard(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Text('Unconfirmed checkout: ${request.stallName}', style: const TextStyle(fontWeight: FontWeight.w700)),
+          const SizedBox(height: 8), Text(pending.data!.cached
+            ? 'Cached request — status may be out of date.' : 'Not a confirmed order or ticket.'),
+          const SizedBox(height: 12),
+          TextButton(style: TextButton.styleFrom(minimumSize: const Size(double.infinity, 48)),
+            onPressed: pending.data!.cached ? null : () => widget.onResume?.call(request),
+            child: const Text('Resume')),
+        ]))]);
+    },
+  );
 }
 
 class _OrderItems extends StatefulWidget {
