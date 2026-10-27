@@ -87,18 +87,20 @@ class _OrdersScreenState extends State<OrdersScreen> {
   }
   Widget _vendorPage(List<Widget> children) => VendorWorkspacePage(
     header: const VendorWorkspaceHeader('Vendor Orders', subtitle: 'Your stall’s order inbox'), children: children);
-  Widget _studentPage(List<Widget> children) => VendorWorkspacePage(
-    header: const StudentWorkspaceHeader('My Orders', icon: Icons.receipt_long_outlined,
-      subtitle: 'Your confirmed orders and tickets'), children: children);
+  Widget _studentPage(BuildContext context, List<Widget> children) => ScrollConfiguration(
+    behavior: ScrollConfiguration.of(context).copyWith(overscroll: false),
+    child: VendorWorkspacePage(
+      header: const StudentWorkspaceHeader('My Orders', icon: Icons.receipt_long_outlined,
+        subtitle: 'Your confirmed orders and tickets'), children: children));
   @override
   Widget build(BuildContext context) => StreamBuilder<MenuData<ConfirmedOrder>>(stream: _orders, builder: (context, s) {
     if (widget.repository == null || s.hasError) {
       final retry = TextButton(onPressed: () => setState(_load), child: const Text('Unable to load orders. Retry'));
-      return widget.vendor ? _vendorPage([VendorWorkspaceCard(child: retry)]) : _studentPage([VendorWorkspaceCard(child: retry)]);
+      return widget.vendor ? _vendorPage([VendorWorkspaceCard(child: retry)]) : _studentPage(context, [VendorWorkspaceCard(child: retry)]);
     }
     if (!s.hasData || s.connectionState == ConnectionState.waiting) {
       const loading = Center(child: CircularProgressIndicator());
-      return widget.vendor ? _vendorPage([const Padding(padding: EdgeInsets.all(32), child: loading)]) : _studentPage([const Padding(padding: EdgeInsets.all(32), child: loading)]);
+      return widget.vendor ? _vendorPage([const Padding(padding: EdgeInsets.all(32), child: loading)]) : _studentPage(context, [const Padding(padding: EdgeInsets.all(32), child: loading)]);
     }
     final orders = s.data!.items.toList()..sort((a, b) => widget.vendor
       ? a.ticket.compareTo(b.ticket) : b.createdAt.compareTo(a.createdAt));
@@ -159,7 +161,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
         for (final order in orders.where((o) => !widget.vendor || _filter == 'All' || o.status == _filter))
           _orderCard(context, order, s, cursor),
       ];
-      return widget.vendor ? _vendorPage(children) : _studentPage(children);
+      return widget.vendor ? _vendorPage(children) : _studentPage(context, children);
     });
   });
 
