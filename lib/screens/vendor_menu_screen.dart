@@ -118,7 +118,7 @@ class _VendorMenuScreenState extends State<VendorMenuScreen> {
                 const VendorWorkspaceCard(child: Padding(padding: EdgeInsets.symmetric(vertical: 24),
                   child: Text('No food items yet', textAlign: TextAlign.center, style: TextStyle(fontSize: 20)))),
               if (!_repo!.canDeleteFood) const Padding(padding: EdgeInsets.only(bottom: 12), child: Text(
-                'Food deletion is unavailable until security testing is complete.', style: TextStyle(color: mutedText))),
+                'Food deletion is disabled until matching deletion Rules are explicitly activated.', style: TextStyle(color: mutedText))),
               for (final food in foods.data!.items) VendorWorkspaceCard(key: ValueKey('menu-food-${food.id}'),
                 child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
                   Row(crossAxisAlignment: CrossAxisAlignment.start, children: [

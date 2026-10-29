@@ -110,6 +110,22 @@ void main() {
     expect(find.text('Food deleted.'), findsOneWidget);
   });
 
+  testWidgets('cached menu disables Food Delete before confirmation', (tester) async {
+    final repo = stage.TestRepository()..session(stage.profile(AccountRole.vendor, setup: true));
+    addTearDown(repo.dispose);
+    final menu = repo.menuRepository..deletesEnabled = true;
+    menu.categoryItems.add(const MenuCategory('rice', 'Rice', 1));
+    menu.foodItems.add(MenuFood('food', FoodDraft(name: 'Rice Bowl', description: 'Fresh rice',
+      priceSen: 850, categoryId: 'rice', pictureId: 'nasi_lemak', available: true), 1));
+    await stage.launch(tester, repo);
+    await stage.tap(tester, 'Menu');
+    menu.cached = true; menu.emit(); await tester.pumpAndSettle();
+    final button = find.widgetWithText(OutlinedButton, 'Delete Food');
+    expect(tester.widget<OutlinedButton>(button).onPressed, isNull);
+    expect(menu.deletes, 0);
+    expect(find.byType(AlertDialog), findsNothing);
+  });
+
   testWidgets('edit changes category and price; availability stays visible and Delete is gated', (tester) async {
     final repo = stage.TestRepository()..session(stage.profile(AccountRole.vendor, setup: true));
     addTearDown(repo.dispose);

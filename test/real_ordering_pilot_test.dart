@@ -41,6 +41,11 @@ void main() {
       expect(allowed(enabled: true, declared: orderingPilotProject, ssl: ssl), false);
     }
   });
+  test('menu deletion requires both the explicit Rules activation and valid ordering pilot', () {
+    expect(realMenuDeletionPilotAllowed(rulesExplicitlyActivated: false, orderingPilotAllowed: true), false);
+    expect(realMenuDeletionPilotAllowed(rulesExplicitlyActivated: true, orderingPilotAllowed: false), false);
+    expect(realMenuDeletionPilotAllowed(rulesExplicitlyActivated: true, orderingPilotAllowed: true), true);
+  });
   test('pilot eligibility feeds the existing simulated checkout FCFS queue and Ready controllers', () async {
     // Test doubles verify controller integration, not Firestore authorization.
     final enabled = allowed(enabled: true, declared: orderingPilotProject);

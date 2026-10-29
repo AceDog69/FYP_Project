@@ -15,9 +15,14 @@ abstract class VendorMenuRepository {
 }
 
 class FirebaseVendorMenuRepository extends VendorMenuRepository {
-  FirebaseVendorMenuRepository(this.db, this.currentUid);
+  FirebaseVendorMenuRepository(this.db, this.currentUid, {bool Function()? deletionAllowed})
+      : _deletionAllowed = deletionAllowed ?? _disabled;
   final FirebaseFirestore db;
   final String? Function() currentUid;
+  final bool Function() _deletionAllowed;
+  static bool _disabled() => false;
+  @override
+  bool get canDeleteFood => _deletionAllowed();
   bool _writing = false;
   String get _uid => currentUid() ?? (throw const AccountException('Please sign in again.'));
   DocumentReference<Map<String, dynamic>> _root(String uid) => db.collection('stalls').doc(uid);

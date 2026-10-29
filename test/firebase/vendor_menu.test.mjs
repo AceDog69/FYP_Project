@@ -274,6 +274,18 @@ test('food deletion never grants writes to order history namespaces',async()=>{
   await assertSucceeds(deletePair(db));
 });
 
+test('food deletion leaves an existing confirmed order snapshot byte-for-byte unchanged',async()=>{
+  const db=await vendor();await category(db);await food(db);
+  const order=doc(db,'orders','confirmed-history');
+  const snapshot={studentUid:'student',vendorUid:'vendor',ticket:7,totalSen:850,
+    items:[{foodId:'food',name:'Rice Bowl',priceSen:850,quantity:1}],status:'Completed'};
+  await env.withSecurityRulesDisabled(context=>setDoc(doc(context.firestore(),'orders','confirmed-history'),snapshot));
+  await assertSucceeds(deleteAtRevision(db,1));
+  assert.deepEqual((await getDoc(order)).data(),snapshot);
+  assert.equal((await getDoc(ref(db,'vendor','menuFoods','food'))).exists(),false);
+  assert.equal((await getDoc(ref(db,'vendor','menuMemberships','food'))).exists(),false);
+});
+
 test('creation/reassignment versus category deletion races preserve current deletion gate',async()=>{
   const db=await vendor();await category(db);await category(db,'drinks','Drinks');
   const first=await Promise.allSettled([food(db),deleteDoc(ref(db,'vendor','menuCategories','rice'))]);
