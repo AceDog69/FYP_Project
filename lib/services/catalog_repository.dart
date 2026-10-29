@@ -1,9 +1,11 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/catalog.dart';
+import '../models/public_queue_count.dart';
 import '../models/vendor_menu.dart';
 import 'auth_repository.dart';
 
 abstract class CatalogRepository {
+  Stream<PublicQueueCount?> queueCount(String vendorUid) => Stream.value(null);
   Stream<MenuData<CatalogStall>> stalls();
   Stream<MenuData<CatalogStall>> stall(String vendorUid);
   Stream<MenuData<MenuCategory>> categories(String vendorUid);
@@ -30,6 +32,18 @@ class FirebaseCatalogRepository extends CatalogRepository {
   FirebaseCatalogRepository(this.db, this.currentUid);
   final FirebaseFirestore db;
   final String? Function() currentUid;
+
+  @override
+  Stream<PublicQueueCount?> queueCount(String vendorUid) async* {
+    final session = currentUid();
+    if (session == null) throw const AccountException('Please sign in again.');
+    await for (final snapshot in db.collection('stallQueueCounts').doc(vendorUid).snapshots(includeMetadataChanges: true)) {
+      if (currentUid() != session) throw const AccountException('Your session changed.');
+      // Never leave a previous confirmed value looking current during a local write.
+      yield snapshot.metadata.hasPendingWrites ? null : PublicQueueCount.decode(vendorUid,
+        snapshot.data(), cached: snapshot.metadata.isFromCache);
+    }
+  }
 
   Stream<MenuData<T>> _watch<T>(Query<Map<String, dynamic>> query,
       T Function(String, Map<String, dynamic>, bool) decode) async* {

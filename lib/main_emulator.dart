@@ -56,6 +56,8 @@ class _DemoCheckoutRepository extends FirebaseOrderRepository {
 
   @override
   bool get canProcessOrders => canCheckout;
+  @override
+  bool get usesPublicQueueCounts => canCheckout && const bool.fromEnvironment('STAGE4B_QUEUE_COUNTS', defaultValue: false);
 
   @override
   bool get canCheckout => emulatorCheckoutAllowed(

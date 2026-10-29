@@ -4,12 +4,15 @@ import '../models/confirmed_order.dart';
 import '../models/vendor_menu.dart';
 import '../models/vendor_queue.dart';
 import '../models/queue_progress.dart';
+import '../models/public_queue_count.dart';
 import 'auth_repository.dart';
 import 'vendor_order_processing.dart';
 
 abstract class OrderRepository {
   // Requires executed Rules proof and review before enabling the real client.
   bool get canCheckout => false;
+  // Opt-in only after the matching Stage 4B Rules candidate is reviewed.
+  bool get usesPublicQueueCounts => false;
   // Candidate operations are enabled only by the isolated debug demo entry.
   bool get canProcessOrders => false;
   Stream<VendorQueue> queue() => Stream.value(const VendorQueue.initial());
@@ -32,7 +35,8 @@ String orderError(Object error) {
 
 class _CheckoutObservation {
   String? state;
-  int? ticket;
+  int? ticket, nextTicket;
+  bool? preparing;
 }
 
 class FirebaseOrderRepository extends OrderRepository {
@@ -50,7 +54,7 @@ class FirebaseOrderRepository extends OrderRepository {
       throw const AccountException('Checkout supports one or two distinct foods.');
     }
   }
-  late final _processing = VendorOrderProcessing(db, currentUid, () => canProcessOrders);
+  late final _processing = VendorOrderProcessing(db, currentUid, () => canProcessOrders, publicQueueCounts: () => usesPublicQueueCounts);
   @override
   Stream<VendorQueue> queue() => _processing.watch();
   @override
@@ -81,7 +85,7 @@ class FirebaseOrderRepository extends OrderRepository {
       try {
         return await db.runTransaction<T>((tx) {
           observed.state = null;
-          observed.ticket = null;
+          observed.ticket = null; observed.nextTicket = null; observed.preparing = null;
           return action(tx, observed);
         }, maxAttempts: 8);
       } on FirebaseException catch (error) {
@@ -100,13 +104,19 @@ class FirebaseOrderRepository extends OrderRepository {
           continue;
         }
         if (state == 'pending' && observed.ticket != null) {
-          final counter = await db.collection('checkoutCounters').doc(request.vendorUid)
+          final counter = await db.collection(usesPublicQueueCounts ? 'stallQueueCounts' : 'checkoutCounters').doc(request.vendorUid)
               .get(const GetOptions(source: Source.server));
           _guard(request);
           if (counter.metadata.hasPendingWrites) {
             rethrow;
           }
-          final ticket = counter.data()?['lastTicket'] ?? 0;
+          final count = usesPublicQueueCounts ? PublicQueueCount.decode(request.vendorUid, counter.data()) : null;
+          if (usesPublicQueueCounts && count == null) rethrow;
+          if (count != null && observed.nextTicket != null &&
+              (count.nextTicket != observed.nextTicket || count.preparing != observed.preparing)) {
+            continue; // Independently confirmed concurrent Vendor progress.
+          }
+          final ticket = count?.lastTicket ?? counter.data()?['lastTicket'] ?? 0;
           if (ticket is int && ticket > observed.ticket!) {
             continue;
           }
@@ -153,12 +163,20 @@ class FirebaseOrderRepository extends OrderRepository {
         throw const AccountException('Stall details changed or the stall is Closed. Discard this request and review your cart.');
       }
       final counterRef = db.collection('checkoutCounters').doc(intent.vendorUid);
-      final counter = await tx.get(counterRef);
+      final counter = await tx.get(usesPublicQueueCounts ? db.collection('stallQueueCounts').doc(intent.vendorUid) : counterRef);
+      final publicCount = usesPublicQueueCounts ? PublicQueueCount.decode(intent.vendorUid, counter.data()) : null;
+      if (usesPublicQueueCounts && publicCount == null) {
+        throw const AccountException('Queue count is unavailable. Ask the Vendor to open Orders to initialize it.');
+      }
+      if (publicCount?.lastTicket == 2147483647) {
+        throw const AccountException('This stall has reached the supported ticket limit.');
+      }
+      observed.nextTicket = publicCount?.nextTicket; observed.preparing = publicCount?.preparing;
       final previousTicket = counter.data()?['lastTicket'] ?? 0;
       if (previousTicket is int) {
         observed.ticket = previousTicket;
       }
-      if (counter.exists && (counter.data()?['schemaVersion'] != 1 || counter.data()?['vendorUid'] != intent.vendorUid ||
+      if (!usesPublicQueueCounts && counter.exists && (counter.data()?['schemaVersion'] != 1 || counter.data()?['vendorUid'] != intent.vendorUid ||
           counter.data()!.length != 5 || counter.data()?['lastOrderId'] is! String || counter.data()?['updatedAt'] is! Timestamp ||
           previousTicket is! int || previousTicket < 1 || previousTicket >= 2147483647)) {
         throw const AccountException('The ticket counter could not be verified.');
@@ -197,6 +215,12 @@ class FirebaseOrderRepository extends OrderRepository {
       }
       tx.set(counterRef, {'schemaVersion': 1, 'vendorUid': intent.vendorUid, 'lastTicket': ticket,
         'lastOrderId': intent.id, 'updatedAt': FieldValue.serverTimestamp()});
+      if (publicCount != null) {
+        tx.set(db.collection('stallQueueCounts').doc(intent.vendorUid), {
+          ...queueCountFields(intent.vendorUid, ticket, publicCount.nextTicket, publicCount.preparing),
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+      }
       tx.update(requestRef, {'state': 'confirmed', 'updatedAt': FieldValue.serverTimestamp()});
     });
     // Server-only reads after commit, never a locally pending success snapshot.

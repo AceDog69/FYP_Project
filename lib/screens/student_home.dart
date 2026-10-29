@@ -7,6 +7,7 @@ import '../theme/app_theme.dart';
 import '../widgets/stall_picture_picker.dart';
 import '../widgets/student_workspace_widgets.dart';
 import '../widgets/vendor_workspace_widgets.dart';
+import '../widgets/stall_queue_count.dart';
 
 class StudentHome extends StatefulWidget {
   const StudentHome({super.key, required this.repository, required this.onStall});
@@ -66,6 +67,8 @@ class _StudentHomeState extends State<StudentHome> {
                 ]),
                 const SizedBox(height: 14),
                 Text('Initial preparation: ${listing.stall.preparationMinutes} minutes', style: const TextStyle(color: mutedText)),
+                const SizedBox(height: 8),
+                StallQueueCount(vendorUid: listing.id, repository: widget.repository, currentStall: !s.data!.cached),
                 const SizedBox(height: 14),
                 FilledButton(onPressed: () => widget.onStall(listing), child: const Text('View Menu')),
               ]))),

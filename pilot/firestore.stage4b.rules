@@ -1,0 +1,575 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function owns(uid) { return signedIn() && request.auth.uid == uid; }
+    function configuredVendor(uid) {
+      let profile = get(/databases/$(database)/documents/users/$(uid)).data;
+      return owns(uid) && profile.role == 'vendor'
+        && profile.stallSetupComplete == true && profile.stallId == uid;
+    }
+    function student() {
+      return signedIn()
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'student';
+    }
+    function publicStallPath(uid) {
+      return /databases/$(database)/documents/publicStalls/$(uid);
+    }
+    function studentMenuReader(uid) {
+      return student() && exists(publicStallPath(uid));
+    }
+    function validPublicStall(d, uid) {
+      let source = getAfter(/databases/$(database)/documents/stalls/$(uid)).data;
+      return d.keys().hasAll(['vendorUid','name','category','preparationMinutes','status','updatedAt'])
+        && d.keys().hasOnly(['vendorUid','name','category','preparationMinutes','status','pictureId','updatedAt'])
+        && source.ownerUid == uid && d.vendorUid == uid
+        && d.name == source.name && d.name is string && d.name.size() > 0 && d.name.size() <= 100
+        && d.name.matches('.*\\S.*')
+        && d.category == source.category
+        && d.category in ['Malay','Western','Chinese','Japanese','Korean','Beverage','Dessert']
+        && d.preparationMinutes == source.preparationMinutes && d.preparationMinutes is int
+        && d.preparationMinutes >= 1 && d.preparationMinutes <= 180
+        && d.status == source.status && d.status in ['open','closed']
+        && (('pictureId' in source && 'pictureId' in d
+              && d.pictureId == source.pictureId && validStallPicture(d.pictureId))
+          || (!('pictureId' in source) && !('pictureId' in d)))
+        && d.updatedAt == request.time;
+    }
+    function validStallPicture(id) {
+      return id is string && id in [
+        'bento', 'bibimbap', 'burger', 'cake',
+        'chinese_food_1', 'chinese_food_2', 'chinese_food_3', 'chinese_food_4',
+        'coffee', 'dessert', 'drink', 'fruit_juice', 'icecream', 'japanese_1',
+        'japanese_curry', 'korean_ramen', 'malay_drinks', 'malay_food',
+        'nasi_lemak', 'sushi', 'teh_ais', 'tteokbokki', 'western_food'
+      ];
+    }
+    function validStallUpdate(data, uid) {
+      return data.keys().hasAll(['ownerUid', 'name', 'category', 'preparationMinutes', 'status', 'createdAt', 'updatedAt'])
+        && data.ownerUid == uid && data.ownerUid == resource.data.ownerUid
+        && data.createdAt == resource.data.createdAt
+        && data.updatedAt is timestamp && data.updatedAt == request.time
+        && data.name is string && data.name.size() > 0 && data.name.size() <= 100
+        && data.name.matches('.*\\S.*')
+        && data.category is string && data.category in ['Malay', 'Western', 'Chinese', 'Japanese', 'Korean', 'Beverage', 'Dessert']
+        && data.preparationMinutes is int && data.preparationMinutes >= 1 && data.preparationMinutes <= 180
+        && data.status in ['open', 'closed']
+        && (!('pictureId' in data) || validStallPicture(data.pictureId))
+        // Other existing fields are preserved; new unapproved fields, removals
+        // or changes to ownership, creation time and queue/order data are denied.
+        && data.diff(resource.data).affectedKeys()
+          .hasOnly(['name', 'category', 'preparationMinutes', 'status', 'pictureId', 'updatedAt']);
+    }
+    // Keep false until the candidate paired-deletion tests pass and are reviewed.
+    // The security suite opens ONLY this gate in its in-memory emulator rules,
+    // and separately tests that this checked-in version still blocks deletion.
+    function menuDeletesEnabled() { return false; }
+    // Closed until the bounded checkout proof is executed and reviewed.
+    function checkoutWritesEnabled() { return true; }
+    function orderPath(id) { return /databases/$(database)/documents/orders/$(id); }
+    // The only preparation slot and the next never-started ticket. Tickets are
+    // allocated contiguously by the unchanged Stage 2C checkout protocol.
+    function queuePath(uid) { return /databases/$(database)/documents/vendorQueues/$(uid); }
+    function queueBefore(uid) {
+      return exists(queuePath(uid)) ? get(queuePath(uid)).data
+        : {'nextTicket': 1, 'preparingOrderId': null, 'revision': 0};
+    }
+    function validQueue(d, uid) {
+      return d.keys().hasAll(['schemaVersion','vendorUid','nextTicket','preparingOrderId','revision','updatedAt'])
+        && d.keys().hasOnly(['schemaVersion','vendorUid','nextTicket','preparingOrderId','revision','updatedAt'])
+        && d.schemaVersion == 1 && d.vendorUid == uid
+        && d.nextTicket is int && d.nextTicket >= 2 && d.nextTicket <= 2147483648
+        && d.revision is int && d.revision >= 1 && d.updatedAt == request.time
+        && (d.preparingOrderId == null
+          || (d.preparingOrderId is string && d.preparingOrderId.matches('^[A-Za-z0-9]{20}$')));
+    }
+    function queueClaim(uid, id, ticket) {
+      let before = queueBefore(uid);
+      let after = getAfter(queuePath(uid)).data;
+      return before.preparingOrderId == null && before.nextTicket == ticket
+        && validQueue(after, uid) && after.preparingOrderId == id
+        && after.nextTicket == before.nextTicket + 1 && after.revision == before.revision + 1;
+    }
+    function queueRelease(uid, id) {
+      let before = get(queuePath(uid)).data;
+      let after = getAfter(queuePath(uid)).data;
+      return before.preparingOrderId == id && validQueue(after, uid)
+        && after.preparingOrderId == null && after.nextTicket == before.nextTicket
+        && after.revision == before.revision + 1;
+    }
+    // Reciprocal link: a cursor write cannot be made without the corresponding
+    // real order transition in the SAME atomic commit (get vs getAfter).
+    function pairedQueueOrder(uid, id, from, to) {
+      let before = get(orderPath(id)).data;
+      let after = getAfter(orderPath(id)).data;
+      return before.vendorUid == uid && before.status == from && after.status == to;
+    }
+    function validQueueWrite(d, uid) {
+      let before = queueBefore(uid);
+      // Compare the write directly; avoid re-reading this same cursor through
+      // queueClaim/queueRelease inside its own rule. The order rule still calls
+      // those reciprocal validators, preserving the Stage 3A invariant.
+      return validQueue(d, uid) && d.revision == before.revision + 1
+        && (before.preparingOrderId == null
+          ? (d.preparingOrderId is string && d.nextTicket == before.nextTicket + 1
+            && get(orderPath(d.preparingOrderId)).data.ticket == before.nextTicket
+            && pairedQueueOrder(uid, d.preparingOrderId, 'Pending', 'Preparing'))
+          : (d.preparingOrderId == null && d.nextTicket == before.nextTicket
+            && pairedQueueOrder(uid, before.preparingOrderId, 'Preparing', 'Ready')));
+    }
+    function validOrderProgress(d, before, id) {
+      return d.diff(before).affectedKeys().hasOnly([
+          'status','statusRevision','statusUpdatedAt','preparingAt','readyAt','completedAt'])
+        && d.statusUpdatedAt == request.time && d.statusRevision is int
+        && ((before.status == 'Pending' && before.get('statusRevision', 0) == 0
+            && d.status == 'Preparing' && d.statusRevision == 1
+            && d.preparingAt == request.time && !('readyAt' in d) && !('completedAt' in d)
+            && queueClaim(before.vendorUid, id, before.ticket))
+          || (before.status == 'Preparing' && before.statusRevision == 1
+            && d.status == 'Ready' && d.statusRevision == 2
+            && d.preparingAt == before.preparingAt && d.readyAt == request.time && !('completedAt' in d)
+            && queueRelease(before.vendorUid, id))
+          || (before.status == 'Ready' && before.statusRevision == 2
+            && d.status == 'Completed' && d.statusRevision == 3
+            && d.preparingAt == before.preparingAt && d.readyAt == before.readyAt
+            && d.completedAt == request.time));
+    }
+    function progressPath(uid) { return /databases/$(database)/documents/queueProgress/$(uid); }
+    // Public aggregate only: no order ID, Student identity or private stall data.
+    function progressShape(d, uid) {
+      return d.keys().hasAll(['schemaVersion','vendorUid','nextTicket','preparing','revision','updatedAt'])
+        && d.keys().hasOnly(['schemaVersion','vendorUid','nextTicket','preparing','revision','updatedAt'])
+        && d.schemaVersion == 1 && d.vendorUid == uid && d.nextTicket is int
+        && d.nextTicket >= 1 && d.nextTicket <= 2147483648
+        && d.preparing is bool && d.revision is int && d.updatedAt is timestamp
+        && d.revision == 2 * (d.nextTicket - 1) - (d.preparing ? 1 : 0)
+        && d.revision >= 0;
+    }
+    function progressMatches(d, q, uid) {
+      return progressShape(d, uid) && d.nextTicket == q.nextTicket
+        && d.preparing == (q.preparingOrderId != null)
+        && d.revision == q.revision && d.updatedAt == q.updatedAt;
+    }
+    function validProgressCreate(d, uid) {
+      // A one-time owner bootstrap may mirror an existing legacy cursor without
+      // moving it. Missing progress never means zero to a Student client.
+      return existsAfter(queuePath(uid))
+        ? progressMatches(d, getAfter(queuePath(uid)).data, uid)
+        : (progressShape(d, uid) && d.nextTicket == 1 && d.preparing == false
+          && d.revision == 0 && d.updatedAt == request.time);
+    }
+    function validProgressUpdate(d, uid) {
+      let after = getAfter(queuePath(uid)).data;
+      return progressMatches(d, after, uid) && d.revision > resource.data.revision
+        && d.nextTicket >= resource.data.nextTicket && after.updatedAt == request.time
+        && after.revision == queueBefore(uid).revision + 1;
+    }
+    function orderItemPath(id, index) { return /databases/$(database)/documents/orders/$(id)/items/$(index); }
+    function requestPath(uid, id) { return /databases/$(database)/documents/users/$(uid)/checkoutRequests/$(id); }
+    function counterPath(uid) { return /databases/$(database)/documents/checkoutCounters/$(uid); }
+    function countPath(uid) { return /databases/$(database)/documents/stallQueueCounts/$(uid); }
+    function lastTicketBefore(uid) {
+      return exists(counterPath(uid)) ? get(counterPath(uid)).data.lastTicket : 0;
+    }
+    function lastTicketAfter(uid) {
+      return existsAfter(counterPath(uid)) ? getAfter(counterPath(uid)).data.lastTicket : 0;
+    }
+    function countQueueAfter(uid) {
+      return existsAfter(queuePath(uid)) ? getAfter(queuePath(uid)).data
+        : {'nextTicket':1, 'preparingOrderId':null, 'revision':0};
+    }
+    function countMatches(d, uid, last, q) {
+      return d == {'schemaVersion':1, 'vendorUid':uid, 'lastTicket':last,
+          'nextTicket':q.nextTicket, 'preparing':q.preparingOrderId != null,
+          'count':last - q.nextTicket + 1 + (q.preparingOrderId != null ? 1 : 0), 'updatedAt':d.updatedAt}
+        && d.updatedAt is timestamp && d.schemaVersion is int && d.lastTicket is int
+        && d.nextTicket is int && d.preparing is bool && last is int && last >= 0 && last <= 2147483647
+        && q.nextTicket is int && q.nextTicket >= 1 && q.nextTicket <= last + 1
+        && d.count is int && d.count >= 0 && d.count <= last;
+    }
+    function countCurrent(d, uid) { return countMatches(d, uid, lastTicketBefore(uid), queueBefore(uid)); }
+    function countAfter(d, uid) { return countMatches(d, uid, lastTicketAfter(uid), countQueueAfter(uid)); }
+    function countForCounter(uid, last) {
+      let d = getAfter(countPath(uid)).data;
+      return d.lastTicket == last && d.updatedAt == request.time;
+    }
+    function countForQueue(uid, q) {
+      let d = getAfter(countPath(uid)).data;
+      return d.nextTicket == q.nextTicket && d.preparing == (q.preparingOrderId != null)
+        && d.updatedAt == request.time;
+    }
+    function bootstrapCounter(uid) {
+      let c = getAfter(counterPath(uid)).data;
+      let o = getAfter(orderPath(c.lastOrderId)).data;
+      return c.keys().hasAll(['schemaVersion','vendorUid','lastTicket','lastOrderId','updatedAt'])
+        && c.keys().hasOnly(['schemaVersion','vendorUid','lastTicket','lastOrderId','updatedAt'])
+        && c.schemaVersion == 1 && c.vendorUid == uid && c.updatedAt is timestamp
+        && c.lastTicket is int && c.lastTicket >= 1 && c.lastTicket <= 2147483647
+        && o.vendorUid == uid && o.ticket == c.lastTicket && o.orderId == c.lastOrderId
+        && o.status in ['Pending','Preparing','Ready','Completed'];
+    }
+    function bootstrapQueue(uid) {
+      let q = getAfter(queuePath(uid)).data;
+      return q.keys().hasAll(['schemaVersion','vendorUid','nextTicket','preparingOrderId','revision','updatedAt'])
+        && q.keys().hasOnly(['schemaVersion','vendorUid','nextTicket','preparingOrderId','revision','updatedAt'])
+        && q.schemaVersion == 1 && q.vendorUid == uid && q.updatedAt is timestamp
+        && q.nextTicket is int && q.nextTicket >= 2 && q.revision is int
+        && q.revision == 2 * (q.nextTicket - 1) - (q.preparingOrderId != null ? 1 : 0)
+        && (q.preparingOrderId == null ||
+          (getAfter(orderPath(q.preparingOrderId)).data.vendorUid == uid
+            && getAfter(orderPath(q.preparingOrderId)).data.status == 'Preparing'
+            && getAfter(orderPath(q.preparingOrderId)).data.ticket == q.nextTicket - 1));
+    }
+    function countBootstrap(uid) {
+      return (!existsAfter(counterPath(uid)) || bootstrapCounter(uid))
+        && (!existsAfter(queuePath(uid)) || bootstrapQueue(uid));
+    }
+    match /stallQueueCounts/{vendorUid} {
+      // Reads verify agreement with current authority, so rollback/old clients
+      // cannot leave a stale projection that still appears server-confirmed.
+      allow get: if (studentMenuReader(vendorUid) && (resource == null || countCurrent(resource.data, vendorUid)))
+        || configuredVendor(vendorUid);
+      allow list, delete: if false;
+      allow create: if configuredVendor(vendorUid) && countBootstrap(vendorUid)
+        && request.resource.data.updatedAt == request.time && countAfter(request.resource.data, vendorUid);
+      allow update: if request.resource.data.updatedAt == request.time
+        && ((checkoutWritesEnabled() && student()
+            && getAfter(counterPath(vendorUid)).data.updatedAt == request.time
+            && getAfter(counterPath(vendorUid)).data.lastTicket == resource.data.lastTicket + 1)
+          || (configuredVendor(vendorUid) && countBootstrap(vendorUid)))
+        && countAfter(request.resource.data, vendorUid);
+    }
+    function safeId(id) { return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[^/]+$'); }
+    function validDraftItem(i) {
+      return i is map && i.keys().hasAll(['foodId','name','description','categoryId','pictureId','priceSen','quantity','foodRevision'])
+        && i.keys().hasOnly(['foodId','name','description','categoryId','pictureId','priceSen','quantity','foodRevision'])
+        && safeId(i.foodId) && safeId(i.categoryId)
+        && i.name is string && i.name.size() >= 1 && i.name.size() <= 100
+        && i.name.matches('^\\S([\\s\\S]*\\S)?$')
+        && i.description is string && i.description.size() >= 1 && i.description.size() <= 500
+        && i.description.matches('^\\S([\\s\\S]*\\S)?$')
+        && validStallPicture(i.pictureId) && i.priceSen is int && i.priceSen >= 1 && i.priceSen <= 100000
+        && i.quantity is int && i.quantity >= 1 && i.quantity <= 20
+        && i.foodRevision is int && i.foodRevision >= 1;
+    }
+    function draftSubtotal(i) { return i.priceSen * i.quantity; }
+    function validRequest(d, uid, id) {
+      return d.keys().hasAll(['schemaVersion','submissionId','studentUid','vendorUid','stallName','items','totalSen','paymentMethod','state','createdAt','updatedAt'])
+        && d.keys().hasOnly(['schemaVersion','submissionId','studentUid','vendorUid','stallName','items','totalSen','paymentMethod','state','createdAt','updatedAt'])
+        && d.schemaVersion == 1 && d.submissionId == id && id.matches('^[A-Za-z0-9]{20}$')
+        && d.studentUid == uid && safeId(d.vendorUid)
+        && d.stallName is string && d.stallName.size() >= 1 && d.stallName.size() <= 100
+        && d.paymentMethod in ['ewallet','onlineBanking','card']
+        && d.createdAt == request.time && d.updatedAt == request.time
+        && d.items is list && d.items.size() >= 1 && d.items.size() <= 2
+        && validDraftItem(d.items[0])
+        && (d.items.size() < 2 || (validDraftItem(d.items[1]) && d.items[1].foodId != d.items[0].foodId))
+        && d.totalSen is int && d.totalSen == draftSubtotal(d.items[0])
+          + (d.items.size() > 1 ? draftSubtotal(d.items[1]) : 0);
+    }
+    function matchesDraft(i, expected) {
+      // The durable draft has exactly eight validated, immutable fields. Only
+      // these two additions may differ: removals/extra fields also appear in diff.
+      return i.diff(expected).affectedKeys().hasOnly(['categoryName','subtotalSen']);
+    }
+    function validOrderItem(i, expected, vendorUid) {
+      let food = get(foodPath(vendorUid, i.foodId)).data;
+      let category = get(categoryPath(vendorUid, i.categoryId)).data;
+      let membership = get(membershipPath(vendorUid, i.foodId)).data;
+      return matchesDraft(i, expected)
+        && i.priceSen is int && i.quantity is int && i.subtotalSen is int && i.foodRevision is int
+        // Exact map equality verifies the whole snapshot, including its shape,
+        // against canonical data. No client-selected snapshot becomes authority.
+        && i == {'foodId':expected.foodId, 'name':food.name, 'description':food.description,
+          'categoryId':food.categoryId, 'categoryName':category.name, 'pictureId':food.pictureId,
+          'priceSen':food.priceSen, 'quantity':expected.quantity,
+          'subtotalSen':food.priceSen * expected.quantity, 'foodRevision':food.revision}
+        && food.vendorUid == vendorUid && food.available == true
+        // Quantity/price/type/picture bounds are already enforced on the
+        // immutable prepared draft; equality above preserves every one of them.
+        && category.vendorUid == vendorUid && i.categoryName == category.name
+        && category.name is string && category.name.size() >= 1 && category.name.size() <= 50
+        && category.revision is int && category.revision >= 1
+        && category.createdAt is timestamp && category.updatedAt is timestamp
+        && category.nameKey == category.name.lower()
+        && membership == {'vendorUid':vendorUid, 'categoryId':i.categoryId};
+    }
+    function validOrder(d, id) {
+      let intent = getAfter(requestPath(request.auth.uid, id)).data;
+      let stall = get(/databases/$(database)/documents/stalls/$(d.vendorUid)).data;
+      let counter = getAfter(counterPath(d.vendorUid)).data;
+      let second = d.itemCount < 2 || existsAfter(orderItemPath(id, '1'));
+      return d == {'schemaVersion':1, 'orderId':id, 'submissionId':id, 'studentUid':request.auth.uid,
+          'vendorUid':intent.vendorUid, 'stallName':stall.name, 'preparationMinutes':stall.preparationMinutes,
+          'ticket':counter.lastTicket, 'itemCount':intent.items.size(), 'totalSen':intent.totalSen,
+          'status':'Pending', 'paymentMethod':intent.paymentMethod, 'paymentStatus':'simulated',
+          'createdAt':request.time, 'firstItem':d.firstItem}
+        && intent.state == 'confirmed' && intent.submissionId == id && intent.studentUid == request.auth.uid
+        && d.stallName == intent.stallName
+        && stall.ownerUid == d.vendorUid && stall.status == 'open'
+        && d.preparationMinutes is int && d.preparationMinutes >= 1 && d.preparationMinutes <= 180
+        // Count/total/payment bounds originate in the immutable prepared draft.
+        && d.itemCount is int && d.itemCount >= 1 && d.itemCount <= 2
+        && d.totalSen is int && d.ticket is int && d.ticket >= 1
+        && counter.vendorUid == d.vendorUid && counter.lastOrderId == id
+        && validOrderItem(d.firstItem, intent.items[0], d.vendorUid)
+        // A child cannot pre-exist its header: its own create rule requires
+        // that same header, slot, request and canonical snapshot. Require every
+        // slot here; validate each child's snapshot ONCE in its own create rule.
+        // Prepared total == sum(draft price * quantity), immutable thereafter;
+        // each canonical snapshot equals that slot's draft and exact subtotal.
+        && second;
+    }
+    function validCounter(d, uid) {
+      let order = getAfter(orderPath(d.lastOrderId)).data;
+      return d == {'schemaVersion':1, 'vendorUid':uid, 'lastTicket':order.ticket,
+          'lastOrderId':order.orderId, 'updatedAt':request.time}
+        && d.lastTicket is int && d.lastTicket >= 1 && d.lastTicket <= 2147483647
+        && d.lastOrderId is string && d.lastOrderId.matches('^[A-Za-z0-9]{20}$')
+        && order.studentUid == request.auth.uid && order.vendorUid == uid && order.status == 'Pending';
+    }
+    function confirmsRequest(uid, id, vendorUid) {
+      let order = getAfter(orderPath(id)).data;
+      return order.studentUid == uid && order.vendorUid == vendorUid && order.submissionId == id;
+    }
+    function validOrderChild(d, id) {
+      let order = getAfter(orderPath(id)).data;
+      let intent = getAfter(requestPath(request.auth.uid, id)).data;
+      return order.studentUid == request.auth.uid && order.createdAt == request.time
+        && order.itemCount == 2 && validOrderItem(d, intent.items[1], order.vendorUid);
+    }
+    function orderReader(d) {
+      return signedIn() && ((d.studentUid == request.auth.uid && student())
+        || (d.vendorUid == request.auth.uid && configuredVendor(request.auth.uid)));
+    }
+    function categoryPath(uid, id) {
+      return /databases/$(database)/documents/stalls/$(uid)/menuCategories/$(id);
+    }
+    function foodPath(uid, id) {
+      return /databases/$(database)/documents/stalls/$(uid)/menuFoods/$(id);
+    }
+    function membershipPath(uid, id) {
+      return /databases/$(database)/documents/stalls/$(uid)/menuMemberships/$(id);
+    }
+    function categoryNamePath(uid, key) {
+      return /databases/$(database)/documents/stalls/$(uid)/menuCategoryNames/$(key);
+    }
+    function validMenuCategory(d, uid) {
+      return d.keys().hasAll(['vendorUid','name','nameKey','revision','createdAt','updatedAt'])
+        && d.keys().hasOnly(['vendorUid','name','nameKey','revision','createdAt','updatedAt'])
+        && d.vendorUid == uid && d.name is string && d.name.size() >= 1 && d.name.size() <= 50
+        && d.name.matches('^[^\\s/]+( [^\\s/]+)*$')
+        && d.nameKey == d.name.lower() && !(d.nameKey in ['.','..'])
+        && !d.nameKey.matches('__.*__')
+        && d.revision is int && d.revision >= 1 && d.createdAt is timestamp
+        && d.updatedAt == request.time;
+    }
+    function validMenuFood(d, uid) {
+      return d.keys().hasAll(['vendorUid','name','description','priceSen','categoryId','pictureId','available','revision','createdAt','updatedAt'])
+        && d.keys().hasOnly(['vendorUid','name','description','priceSen','categoryId','pictureId','available','revision','createdAt','updatedAt'])
+        && d.vendorUid == uid && d.name is string && d.name.size() >= 1 && d.name.size() <= 100
+        && d.name.matches('^\\S([\\s\\S]*\\S)?$')
+        && d.description is string && d.description.size() >= 1 && d.description.size() <= 500
+        && d.description.matches('^\\S([\\s\\S]*\\S)?$')
+        && d.priceSen is int && d.priceSen >= 1 && d.priceSen <= 100000
+        && d.categoryId is string && d.categoryId.size() >= 1 && d.categoryId.size() <= 128
+        && d.categoryId.matches('^[^/]+$')
+        && validStallPicture(d.pictureId) && d.available is bool
+        && d.revision is int && d.revision >= 1 && d.createdAt is timestamp
+        && d.updatedAt == request.time;
+    }
+    function linkedFood(uid, id, categoryId) {
+      return getAfter(categoryPath(uid, categoryId)).data.vendorUid == uid
+        && getAfter(membershipPath(uid, id)).data.vendorUid == uid
+        && getAfter(membershipPath(uid, id)).data.categoryId == categoryId;
+    }
+    // Both documents must exist and agree BEFORE deletion, and both must be
+    // absent AFTER the atomic request. An orphan is not client-repairable.
+    // Category deletion remains unconditionally denied; this does not prove
+    // that a category is empty. App Food Delete stays gated pending execution
+    // of the security suite. These rules have not been deployed.
+    function pairedFoodDeletion(uid, id) {
+      let food = get(foodPath(uid, id)).data;
+      let membership = get(membershipPath(uid, id)).data;
+      return food.vendorUid == uid && membership.vendorUid == uid
+        && membership.keys().hasAll(['vendorUid', 'categoryId'])
+        && membership.keys().hasOnly(['vendorUid', 'categoryId'])
+        && food.categoryId == membership.categoryId
+        && get(categoryPath(uid, food.categoryId)).data.vendorUid == uid
+        && !existsAfter(foodPath(uid, id))
+        && !existsAfter(membershipPath(uid, id));
+    }
+    function validProfile(data, uid) {
+      return data.keys().hasAll(['uid', 'fullName', 'email', 'phoneNumber', 'role', 'createdAt', 'stallSetupComplete', 'stallId'])
+        && data.keys().hasOnly(['uid', 'fullName', 'email', 'phoneNumber', 'role', 'createdAt', 'stallSetupComplete', 'stallId'])
+        && data.uid == uid
+        && data.fullName is string && data.fullName.size() > 0 && data.fullName.size() <= 100
+        && data.email is string && data.email == request.auth.token.email
+        && data.phoneNumber is string && data.phoneNumber.size() >= 8 && data.phoneNumber.size() <= 30
+        && data.role in ['student', 'vendor'] && data.createdAt is timestamp
+        && data.stallSetupComplete is bool
+        && ((!data.stallSetupComplete && data.stallId == null)
+          || (data.role == 'vendor' && data.stallSetupComplete && data.stallId == uid));
+    }
+    function validStall(data, uid) {
+      return data.keys().hasAll(['ownerUid', 'name', 'category', 'preparationMinutes', 'status', 'createdAt'])
+        && data.keys().hasOnly(['ownerUid', 'name', 'category', 'preparationMinutes', 'status', 'createdAt'])
+        && data.ownerUid == uid
+        && data.name is string && data.name.size() > 0 && data.name.size() <= 100
+        && data.category is string && data.category in ['Malay', 'Western', 'Chinese', 'Japanese', 'Korean', 'Beverage', 'Dessert']
+        && data.preparationMinutes is int && data.preparationMinutes >= 1 && data.preparationMinutes <= 180
+        && data.status == 'closed' && data.createdAt == request.time;
+    }
+    match /users/{uid} {
+      allow get: if owns(uid);
+      allow list, delete: if false;
+      allow create: if owns(uid) && validProfile(request.resource.data, uid)
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.stallSetupComplete == false && request.resource.data.stallId == null;
+      allow update: if owns(uid) && validProfile(request.resource.data, uid)
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['fullName', 'phoneNumber', 'stallId', 'stallSetupComplete'])
+        && ((request.resource.data.stallId == resource.data.stallId
+              && request.resource.data.stallSetupComplete == resource.data.stallSetupComplete)
+          || (resource.data.role == 'vendor' && !resource.data.stallSetupComplete
+              && request.resource.data.stallSetupComplete && request.resource.data.stallId == uid
+              && !exists(/databases/$(database)/documents/stalls/$(uid))
+              && validStall(getAfter(/databases/$(database)/documents/stalls/$(uid)).data, uid)));
+    }
+    match /users/{studentUid}/checkoutRequests/{submissionId} {
+      allow read: if owns(studentUid);
+      allow create: if checkoutWritesEnabled() && owns(studentUid) && student()
+        && validRequest(request.resource.data, studentUid, submissionId)
+        && (request.resource.data.state == 'pending'
+          || (request.resource.data.state == 'cancelled'
+            && (!existsAfter(orderPath(submissionId)) || getAfter(orderPath(submissionId)).data.studentUid != studentUid)));
+      allow update: if checkoutWritesEnabled() && owns(studentUid) && student()
+        && resource.data.state == 'pending'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['state','updatedAt'])
+        && request.resource.data.updatedAt == request.time
+        && ((request.resource.data.state == 'confirmed'
+            && confirmsRequest(studentUid, submissionId, resource.data.vendorUid))
+          || (request.resource.data.state == 'cancelled'
+            && (!existsAfter(orderPath(submissionId)) || getAfter(orderPath(submissionId)).data.studentUid != studentUid)));
+      allow delete: if false;
+    }
+    match /checkoutCounters/{vendorUid} {
+      allow get: if configuredVendor(vendorUid);
+      allow list: if false;
+      allow create: if checkoutWritesEnabled() && student() && validCounter(request.resource.data, vendorUid)
+        && request.resource.data.lastTicket == 1 && countForCounter(vendorUid, 1);
+      allow update: if checkoutWritesEnabled() && student() && resource.data.schemaVersion == 1
+        && resource.data.keys().hasOnly(['schemaVersion','vendorUid','lastTicket','lastOrderId','updatedAt'])
+        && resource.data.lastTicket is int && resource.data.lastTicket >= 1 && resource.data.lastTicket < 2147483647
+        && resource.data.lastOrderId is string && resource.data.updatedAt is timestamp
+        && resource.data.vendorUid == vendorUid && validCounter(request.resource.data, vendorUid)
+        && request.resource.data.lastTicket == resource.data.lastTicket + 1
+        && countForCounter(vendorUid, request.resource.data.lastTicket);
+      allow delete: if false;
+    }
+    match /queueProgress/{vendorUid} {
+      allow get: if studentMenuReader(vendorUid) || configuredVendor(vendorUid);
+      allow list, delete: if false;
+      allow create: if configuredVendor(vendorUid) && validProgressCreate(request.resource.data, vendorUid);
+      allow update: if configuredVendor(vendorUid) && validProgressUpdate(request.resource.data, vendorUid);
+    }
+    match /vendorQueues/{vendorUid} {
+      allow get: if configuredVendor(vendorUid);
+      allow list, delete: if false;
+      allow create, update: if configuredVendor(vendorUid) && validQueueWrite(request.resource.data, vendorUid)
+        && progressMatches(getAfter(progressPath(vendorUid)).data, request.resource.data, vendorUid)
+        && countForQueue(vendorUid, request.resource.data);
+    }
+    match /orders/{orderId} {
+      allow read: if orderReader(resource.data);
+      allow create: if checkoutWritesEnabled() && student() && validOrder(request.resource.data, orderId);
+      allow update: if configuredVendor(resource.data.vendorUid)
+        && validOrderProgress(request.resource.data, resource.data, orderId);
+      allow delete: if false;
+      match /items/{index} {
+        allow read: if orderReader(get(orderPath(orderId)).data);
+        allow create: if checkoutWritesEnabled() && signedIn() && index == '1'
+          && validOrderChild(request.resource.data, orderId);
+        allow update, delete: if false;
+      }
+    }
+    match /publicStalls/{vendorUid} {
+      allow read: if student() || configuredVendor(vendorUid);
+      allow create, update: if configuredVendor(vendorUid)
+        && validPublicStall(request.resource.data, vendorUid);
+      allow delete: if false;
+    }
+    match /stalls/{stallId} {
+      // Owners must be able to read the absent document in a transaction.
+      allow get: if owns(stallId);
+      allow list, delete: if false;
+      allow update: if configuredVendor(stallId) && validStallUpdate(request.resource.data, stallId)
+        // Once published, old clients cannot silently leave a stale public
+        // status/price context behind. The application writes both atomically.
+        && (!exists(publicStallPath(stallId))
+          || validPublicStall(getAfter(publicStallPath(stallId)).data, stallId));
+      allow create: if owns(stallId) && validStall(request.resource.data, stallId)
+        && get(/databases/$(database)/documents/users/$(stallId)).data.role == 'vendor'
+        && get(/databases/$(database)/documents/users/$(stallId)).data.stallSetupComplete == false
+        && getAfter(/databases/$(database)/documents/users/$(stallId)).data.stallSetupComplete == true
+        && getAfter(/databases/$(database)/documents/users/$(stallId)).data.stallId == stallId;
+
+      match /menuCategories/{categoryId} {
+        allow read: if studentMenuReader(stallId) || configuredVendor(stallId);
+        allow create: if configuredVendor(stallId) && validMenuCategory(request.resource.data, stallId)
+          && request.resource.data.revision == 1 && request.resource.data.createdAt == request.time
+          && getAfter(categoryNamePath(stallId, request.resource.data.nameKey)).data.categoryId == categoryId;
+        allow update: if configuredVendor(stallId) && validMenuCategory(request.resource.data, stallId)
+          && request.resource.data.createdAt == resource.data.createdAt
+          && request.resource.data.revision == resource.data.revision + 1
+          && getAfter(categoryNamePath(stallId, request.resource.data.nameKey)).data.categoryId == categoryId
+          && (request.resource.data.nameKey == resource.data.nameKey
+            || !existsAfter(categoryNamePath(stallId, resource.data.nameKey)));
+        allow delete: if false;
+      }
+      match /menuCategoryNames/{key} {
+        allow read: if configuredVendor(stallId);
+        allow create: if configuredVendor(stallId)
+          && request.resource.data.keys().hasAll(['vendorUid','categoryId'])
+          && request.resource.data.keys().hasOnly(['vendorUid','categoryId'])
+          && request.resource.data.vendorUid == stallId
+          && request.resource.data.categoryId is string
+          && request.resource.data.categoryId.size() >= 1 && request.resource.data.categoryId.size() <= 128
+          && request.resource.data.categoryId.matches('^[^/]+$')
+          && getAfter(categoryPath(stallId, request.resource.data.categoryId)).data.nameKey == key;
+        allow update: if false;
+        allow delete: if configuredVendor(stallId)
+          && getAfter(categoryPath(stallId, resource.data.categoryId)).data.nameKey != key;
+      }
+      match /menuFoods/{foodId} {
+        allow read: if (studentMenuReader(stallId) && resource.data.available == true)
+          || configuredVendor(stallId);
+        allow create: if configuredVendor(stallId) && validMenuFood(request.resource.data, stallId)
+          && request.resource.data.createdAt == request.time && request.resource.data.revision == 1
+          && linkedFood(stallId, foodId, request.resource.data.categoryId);
+        allow update: if configuredVendor(stallId) && validMenuFood(request.resource.data, stallId)
+          && request.resource.data.createdAt == resource.data.createdAt
+          && request.resource.data.revision == resource.data.revision + 1
+          && linkedFood(stallId, foodId, request.resource.data.categoryId);
+        allow delete: if menuDeletesEnabled() && configuredVendor(stallId)
+          && pairedFoodDeletion(stallId, foodId);
+      }
+      match /menuMemberships/{foodId} {
+        allow read: if configuredVendor(stallId);
+        allow create, update: if configuredVendor(stallId)
+          && request.resource.data.keys().hasAll(['vendorUid','categoryId'])
+          && request.resource.data.keys().hasOnly(['vendorUid','categoryId'])
+          && request.resource.data.vendorUid == stallId
+          && request.resource.data.categoryId is string
+          && request.resource.data.categoryId.size() >= 1 && request.resource.data.categoryId.size() <= 128
+          && request.resource.data.categoryId.matches('^[^/]+$')
+          && getAfter(foodPath(stallId, foodId)).data.vendorUid == stallId
+          && getAfter(foodPath(stallId, foodId)).data.categoryId == request.resource.data.categoryId
+          && getAfter(categoryPath(stallId, request.resource.data.categoryId)).data.vendorUid == stallId;
+        allow delete: if menuDeletesEnabled() && configuredVendor(stallId)
+          && pairedFoodDeletion(stallId, foodId);
+      }
+    }
+    match /{document=**} { allow read, write: if false; }
+  }
+}

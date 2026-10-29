@@ -1,0 +1,3 @@
+{
+  "firestore": {"rules": "pilot/firestore.stage4b.closed.rules"}
+}

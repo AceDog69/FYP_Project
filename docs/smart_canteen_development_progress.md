@@ -1,8 +1,8 @@
 # Smart Canteen development progress
 
-Updated 26 October 2026 (Asia/Singapore). Supervisor meeting: 28 October 2026.
+Updated 29 October 2026 (Asia/Singapore). Supervisor meeting: 28 October 2026.
 
-**Latest state:** the real Firebase pilot preparation section at the end supersedes historical checkpoint
+**Latest state:** the Stage 4B public queue count section at the end supersedes historical checkpoint
 limitations/results below. Production checkout and both Vendor destructive actions remain gated.
 
 ## Milestones and source
@@ -1127,3 +1127,51 @@ activation, full local security verification, actual deployed-Rules backup, expl
 deploy/Console verification and rollback, two-client Pixel 6 acceptance and private debug-signed release APK
 build/install/hash checks. Local Rules and Flutter tests plus manual review are required before any deployment.
 Stop at preparation; live activation and APK acceptance remain manual and unverified.
+
+## Stage 4B public queue count — 29 October 2026
+
+Verified base: `68d15b6d3d366ad102e8dc274f639cc97019d5f9`, latest pilot branch including Stage 4A Food Delete
+preparation and Student Orders fixes. Candidate: `feature/stage-4b-public-queue-count`; delivery gives exact
+verified GitHub SHA. All previously existing Flutter/security test files remain unchanged.
+
+Implemented only Student Home Orders in queue. Sanitized `stallQueueCounts/{vendorUid}` stores exactly
+schemaVersion, vendorUid, lastTicket, nextTicket, preparing, count and updatedAt. Count is L−N+1+(preparing?1:0):
+checkout +1, Start unchanged, Ready −1 once, Completed unchanged. No identities/order IDs/snapshots in public
+projection and no Home ETA. Missing/cached/malformed/denied/pending/unverified data shows Queue unavailable.
+
+Stage 4B opt-in clients read that public allocation source instead of private checkoutCounters, then atomically
+write the original private counter/order/request plus count. Vendor FCFS writes cursor/progress/order/count
+atomically. Separate candidate Rules require both reciprocal links and independently verify the complete mirror
+against canonical post-transaction sources. Student gets also check current source agreement to reject stale
+mirrors; private counter get is owner-Vendor only and listing denied. Existing queue/ETA calculations unchanged.
+Guarded same-ID and contention recovery retain original transaction semantics; no blind authorization retries.
+
+Owning Vendor Orders initialization/repair verifies counter, cursor, last-order and Preparing-order boundaries
+inside a server transaction. Missing summary never means zero. Both authoritative sources absent under accepted
+no-delete invariants can prove the initial zero; malformed authority fails closed. No order scan, source reset,
+ID migration or live backfill. This is not recovery from arbitrary privileged Admin corruption.
+
+Existing conservative/default/ordering/Stage 4A deletion Rules/configs/launchers and deletion-disabled defaults
+are unchanged. New Stage 4B closed and ordering candidates/configs are review artifacts, generated reproducibly.
+Explicit STAGE4B_QUEUE_COUNTS build flag defaults false and requires existing ordering eligibility. Old live pilot
+behavior remains as-is; its counter-read concern is not fixed until later approved Stage 4B activation. New and
+old client/Rules modes must not be mixed. Food/Category Delete remains closed in both Stage 4B candidates.
+
+Cloud final emulator suite: **149/149 passed (105 existing registered emulator cases + 44 new Stage 4B), zero
+Rules-budget diagnostics**, child exit zero and log evidence. Prior user report was 111 security tests; actual
+runner counts are recorded separately from Node unit checks rather than assuming that number was executed.
+All old security sources are preserved, including Stage 4A. Additional Node unit/generator/launcher/transport
+checks: **21/21 passed**. Initial fixture API failures were corrected; no validation was removed. Integer/double
+Rules equality has explicit type guards and an adversarial emulator fixture. Exact per-request expression/access
+counts are not inferred from coverage; budget guard scans every negative/positive run and debug logs.
+
+Flutter/Dart and Android are unavailable: analyze, Flutter tests, compilation and manual Android acceptance
+were **not run**. Ten new model/default-gate/widget tests are written but unexecuted; existing 176 Flutter sources
+preserved. Source scope, lexical delimiters and whitespace checked. Existing locked Node dependencies and local
+Firestore emulator installed for tests; no new project dependency, live Firebase access, migration, deployment,
+billing change, merge or APK build/publication.
+
+See [Stage 4B schema, security proof, bootstrap plan and Windows CMD guide](stage_4b_public_queue_count.md).
+Run the complete new demo-only runner and Windows Flutter/Pixel 6 checks before considering any later activation.
+Stop after this feature. Home ETA, Category Delete, four-food checkout, parallel preparation and background
+notifications remain outside scope.

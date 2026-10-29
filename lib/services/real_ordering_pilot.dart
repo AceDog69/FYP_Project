@@ -47,5 +47,7 @@ class _PilotOrders extends FirebaseOrderRepository {
   @override
   bool get canCheckout => allowed();
   @override
+  bool get usesPublicQueueCounts => allowed() && const bool.fromEnvironment('STAGE4B_QUEUE_COUNTS', defaultValue: false);
+  @override
   bool get canProcessOrders => allowed();
 }
