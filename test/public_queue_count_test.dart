@@ -18,12 +18,12 @@ class _NoNetworkFirestore implements FirebaseFirestore {
 }
 class _Catalog extends FakeCatalogRepository {
   final counts = <String, Map<String, dynamic>?>{};
-  final reads = <String, int>{};
+  final countReadsByVendor = <String, int>{};
   bool countCached = false, countLoading = false;
   String? countError;
   @override
   Stream<PublicQueueCount?> queueCount(String vendorUid) async* {
-    reads.update(vendorUid, (n) => n + 1, ifAbsent: () => 1);
+    countReadsByVendor.update(vendorUid, (n) => n + 1, ifAbsent: () => 1);
     PublicQueueCount? value() => PublicQueueCount.decode(vendorUid, counts[vendorUid], cached: countCached);
     if (!countLoading) yield value();
     await for (final _ in events.stream) {
@@ -87,7 +87,7 @@ void main() {
     final repo = catalog(); repo.counts['alpha'] = data('alpha',1,1,false); repo.counts['beta'] = data('beta',4,2,false);
     await mount(tester,StudentHome(repository:repo,onStall:(_) {})); await tester.pumpAndSettle();
     expect(find.text('Orders in queue: 1'),findsOneWidget);
-    await tester.enterText(find.byType(TextField),'Alpha'); await tester.pumpAndSettle(); expect(repo.reads['alpha'],1);
+    await tester.enterText(find.byType(TextField),'Alpha'); await tester.pumpAndSettle(); expect(repo.countReadsByVendor['alpha'],1);
     repo.counts['alpha'] = data('alpha',2,2,true); repo.emit(); await tester.pumpAndSettle(); expect(find.text('Orders in queue: 2'),findsOneWidget);
     repo.counts['alpha'] = data('alpha',2,2,false); repo.emit(); await tester.pumpAndSettle(); expect(find.text('Orders in queue: 1'),findsOneWidget);
     await tester.tap(find.byTooltip('Clear search')); await tester.pumpAndSettle();
@@ -132,6 +132,7 @@ void main() {
     await tester.ensureVisible(chip); await tester.tap(chip); await tester.pumpAndSettle();
     final action = find.widgetWithText(FilledButton,'View Menu');
     await tester.scrollUntilVisible(action,200,scrollable:find.byWidgetPredicate((w) => w is Scrollable && w.axisDirection == AxisDirection.down).first);
+    await tester.ensureVisible(action); await tester.pumpAndSettle();
     await tester.tap(action); await tester.pumpAndSettle(); expect(selected,'closed');
     expect(find.text('Orders in queue: 2147483647'),findsOneWidget); expect(tester.takeException(),isNull);
   });
