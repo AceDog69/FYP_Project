@@ -49,7 +49,6 @@ class _StudentCartScreenState extends State<StudentCartScreen> {
       priceSen: l.food.draft.priceSen, quantity: l.quantity, foodRevision: l.food.revision)).toList();
     return Column(children: [
       CommerceHeader('My Cart', onBack: widget.onBrowse, actions: [
-        const Icon(Icons.shopping_cart_outlined, color: Colors.white),
         IconButton(tooltip: 'Clear Cart', onPressed: _busy || cart.checkoutLocked || cart.lines.isEmpty ? null : _clear,
           icon: const Icon(Icons.delete_outline, color: Colors.white)),
       ]),
