@@ -3,10 +3,11 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { stage4bRules } from './prepare_stage4b.mjs';
 const read = path => readFileSync(new URL('../'+path,import.meta.url),'utf8');
+const normalizedRules = rules => rules.replace(/\r\n/g, '\n');
 test('separate closed/ordering candidates are reproducible and retain deletion-disabled defaults', () => {
   const source = read('firestore.rules');
   for (const [file, ordering] of [['stage4b',true],['stage4b.closed',false]]) {
-    const candidate = read('pilot/firestore.'+file+'.rules'); assert.equal(candidate,stage4bRules(source,ordering));
+    const candidate = read('pilot/firestore.'+file+'.rules'); assert.equal(normalizedRules(candidate),normalizedRules(stage4bRules(source,ordering)));
     assert.ok(candidate.includes('function menuDeletesEnabled() { return false; }'));
     assert.ok(candidate.includes('allow delete: if false;'));
   }
