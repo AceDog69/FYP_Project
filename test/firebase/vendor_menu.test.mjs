@@ -10,7 +10,9 @@ const closedGate='function menuDeletesEnabled() { return false; }';
 // These are candidate-rule proofs, not permission to enable the application.
 // Fail if the gate changes unexpectedly; test the checked-in closed gate below.
 assert.equal(checkedInRules.split(closedGate).length,2,'Expected one closed food-delete gate');
-const candidateRules=checkedInRules.replace(closedGate,'function menuDeletesEnabled() { return true; }');
+const candidateRules=process.env.SMART_CANTEEN_INTEGRATED_RULES === 'true'
+  ? readFileSync(new URL('../../pilot/firestore.stage4-integrated.rules', import.meta.url),'utf8')
+  : checkedInRules.replace(closedGate,'function menuDeletesEnabled() { return true; }');
 before(async () => {
   assert.equal(process.env.FIRESTORE_EMULATOR_HOST, '127.0.0.1:8080');
   assert.equal(process.env.FIREBASE_AUTH_EMULATOR_HOST, '127.0.0.1:9099');

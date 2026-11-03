@@ -186,11 +186,9 @@ class _MenuCategoriesScreenState extends State<MenuCategoriesScreen> {
         if (s.data!.cached) const Text('Cached categories — connect to make changes.'),
         FilledButton(onPressed: s.data!.cached ? null : () => _edit(), child: const Text('Add Category')),
         const SizedBox(height: 16),
-        const Text('Category deletion is unavailable because empty categories cannot yet be verified securely.'),
         for (final c in s.data!.items) Card(child: Padding(padding: const EdgeInsets.all(12), child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch, children: [Text(c.name), Wrap(spacing: 12, children: [
             TextButton(onPressed: s.data!.cached ? null : () => _edit(c), child: const Text('Edit')),
-            const TextButton(onPressed: null, child: Text('Delete Category')),
           ])]))),
       ]);
     }),

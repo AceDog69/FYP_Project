@@ -10,7 +10,9 @@ import { countRef, countData, bootstrapCount, countPayload, countWrites, submitC
 import { budgetDiagnostic } from './checkout_budget.mjs';
 import { boundedOfflineCleanup } from './checkout_transport.mjs';
 
-const candidate = readFileSync(new URL('../../pilot/firestore.stage4b.rules', import.meta.url), 'utf8');
+const integrated = process.env.SMART_CANTEEN_INTEGRATED_RULES === 'true';
+const candidate = readFileSync(new URL(integrated
+  ? '../../pilot/firestore.stage4-integrated.rules' : '../../pilot/firestore.stage4b.rules', import.meta.url), 'utf8');
 const closed = readFileSync(new URL('../../pilot/firestore.stage4b.closed.rules', import.meta.url), 'utf8');
 const legacy = readFileSync(new URL('../../pilot/firestore.ordering.rules', import.meta.url), 'utf8');
 const runId = randomBytes(5).toString('hex'); let env, sequence = 0;
@@ -187,7 +189,8 @@ test('closed Stage 4B candidate preserves default-disabled ordering and deletion
   await bootstrapCount(owner); assert.equal(await count(student),0); const q = await draft(student);
   await deny(prepare(student,q)); await deny(deleteDoc(doc(owner,'stalls','vendor','menuFoods','food0')));
 });
-test('ordering Stage 4B candidate keeps Food and Category Delete closed', async () => {
+test(integrated ? 'integrated candidate denies partial Food Delete and all Category Delete'
+  : 'ordering Stage 4B candidate keeps Food and Category Delete closed', async () => {
   const {owner} = await setup(); await deny(deleteDoc(doc(owner,'stalls','vendor','menuFoods','food0')));
   await deny(deleteDoc(doc(owner,'stalls','vendor','menuCategories','cat0')));
 });

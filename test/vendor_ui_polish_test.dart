@@ -76,7 +76,9 @@ void main() {
     expect(tester.widget<FilledButton>(add).onPressed, isNotNull);
     expect(tester.widget<OutlinedButton>(find.widgetWithText(OutlinedButton, 'Delete Food')).onPressed, isNull);
     await press(tester, manage);
-    expect(tester.widget<TextButton>(find.widgetWithText(TextButton, 'Delete Category')).onPressed, isNull);
+    expect(find.text('Delete Category'), findsNothing);
+    expect(find.textContaining('Category deletion is unavailable'), findsNothing);
+    expect(tester.widget<TextButton>(find.widgetWithText(TextButton, 'Edit')).onPressed, isNotNull);
     await tester.pageBack(); await tester.pumpAndSettle();
     await press(tester, add); expect(find.byType(VendorFoodEditor), findsOneWidget);
     expect(repo.menuRepository.saves, 0); await tester.pageBack(); await tester.pumpAndSettle();

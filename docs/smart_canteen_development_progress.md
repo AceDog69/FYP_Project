@@ -1,9 +1,10 @@
 # Smart Canteen development progress
 
-Updated 29 October 2026 (Asia/Singapore). Supervisor meeting: 28 October 2026.
+Updated 3 November 2026 (Asia/Singapore). Supervisor meeting: 28 October 2026.
 
-**Latest state:** the Stage 4B public queue count section at the end supersedes historical checkpoint
-limitations/results below. Production checkout and both Vendor destructive actions remain gated.
+**Latest state:** the Stage 4 integrated pilot section at the end supersedes historical checkpoint
+limitations/results below. Conservative default Rules and client flags remain closed by default. The separate
+combined candidate enables paired Food Delete; Category Delete stays denied. Live deployment is unchanged.
 
 ## Milestones and source
 
@@ -1175,3 +1176,45 @@ See [Stage 4B schema, security proof, bootstrap plan and Windows CMD guide](stag
 Run the complete new demo-only runner and Windows Flutter/Pixel 6 checks before considering any later activation.
 Stop after this feature. Home ETA, Category Delete, four-food checkout, parallel preparation and background
 notifications remain outside scope.
+
+## Stage 4 integrated pilot — 3 November 2026
+
+Verified GitHub base `a4c1e2f5825533522a988d0270f9ae46c67bbf81`, latest
+`feature/stage-4b-public-queue-count`, including the Windows widget-test correction. User reports that base
+passed 186/186 Flutter and 149/149 Firebase emulator cases. Candidate branch:
+`feature/stage-4-integrated-pilot`; the delivery report identifies the exact backed-up commit SHA.
+
+Removed only the unavailable Category Delete button/explanation. Add/Edit Category, stable category IDs,
+menu validation and records remain. Category deletion is still denied by Rules. Updated two affected widget
+tests to assert absence and verify Add/Edit; existing Food Delete confirmation/cancel/pending/error/retry,
+Student Cart, checkout, Home count, FCFS, Queue/ETA and notification coverage remains.
+
+New combined candidate/config is generated from the accepted Stage 4B ordering candidate. The ONLY Rules
+difference is menuDeletesEnabled false→true, authorizing the already reviewed owning-Vendor paired
+food/membership deletion. All canonical snapshot, counter, FCFS, count/privacy and category checks are
+identical. Default Rules, default config, previous Stage 4A/4B candidates and generators remain unchanged.
+No checkout or Vendor processing transaction, queue formula, two-food limit or real-pilot identity/TLS gate changed.
+
+Real ordering and deletion flags still default off. For synthetic Pixel 6 acceptance only, main_emulator.dart
+adds EMULATOR_FOOD_DELETE (default false), requiring the existing verified emulator checkout environment
+AND Stage 4B mode. Normal/real/release entry points cannot activate through that flag. One additional
+Flutter policy test plus existing isolation assertions are written; Cloud has no usable Dart/Flutter SDK,
+so analyzer, compilation, Flutter/Android tests and APK builds were not run.
+
+Cloud final full run: **223/223 case executions passed**: all accepted 149 Stage 4B cases plus 74 combined-policy
+executions (19 menu + 44 public-count reruns + 11 new integration cases). Both phases exited zero, no failures
+or skips, **zero Rules-budget diagnostics**, with nonempty debug-log evidence. Separate Node generator,
+launcher, transport and budget checks: **25/25 passed**. JavaScript syntax and git diff --check passed.
+Budget diagnostics include client errors and nonempty Firestore debug logs. The focused
+11/11 run passed after correcting an absent-order test observer: Rules were not changed to permit reading a
+resource with no provable owner. All races settle before bounded cleanup; no test accepts arbitrary failures.
+
+See [Stage 4 integrated pilot: Windows CMD, Pixel 6, live transition and rollback](stage_4_integrated_pilot.md).
+The guide requires a private actual-deployed-Rules/data backup, closed-checkout maintenance, owner-verified
+bootstrap of every required stall, compatible updated clients and separately approved activation. Missing
+summaries never imply zero. Old APKs omit the Stage 4B mirror writes/read private counters and fail safely
+under the new protocol. Rules rollback cannot undo menu deletion or repair corrupted authority.
+
+No live Firebase connection, deployment, reset, migration/backfill, real-data deletion, billing change,
+dependency change, APK build/publication or merge occurred. Stop after this candidate; live deployment and
+any future feature require separate explicit approval.

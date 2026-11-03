@@ -33,8 +33,15 @@ void main() {
     await tester.enterText(find.byType(TextFormField), ' rice '); await stage.tap(tester, 'Save');
     expect(find.textContaining('already exists'), findsOneWidget);
     await stage.tap(tester, 'Cancel');
-    final del = find.widgetWithText(TextButton, 'Delete Category');
-    expect(tester.widget<TextButton>(del).onPressed, isNull);
+    expect(find.text('Delete Category'), findsNothing);
+    expect(find.textContaining('Category deletion is unavailable'), findsNothing);
+    final categoryId = repo.menuRepository.categoryItems.single.id;
+    await stage.tap(tester, 'Edit');
+    await tester.enterText(find.byType(TextFormField), 'Rice Bowls');
+    await stage.tap(tester, 'Save');
+    expect(repo.menuRepository.categoryItems.single.name, 'Rice Bowls');
+    expect(repo.menuRepository.categoryItems.single.id, categoryId);
+    expect(find.text('Add Category'), findsOneWidget);
     await tester.pageBack(); await tester.pumpAndSettle();
     repo.menuRepository.cached = true; repo.menuRepository.emit(); await tester.pumpAndSettle();
     expect(find.textContaining('Cached menu'), findsOneWidget);

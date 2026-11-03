@@ -8,6 +8,7 @@ import 'main.dart' show SmartCanteenApp;
 import 'services/firebase_auth_repository.dart';
 import 'services/emulator_checkout_policy.dart';
 import 'services/order_repository.dart';
+import 'services/vendor_menu_repository.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -43,9 +44,16 @@ class _DemoAuthRepository extends FirebaseAuthRepository {
   final bool flagEnabled;
   late final OrderRepository _demoOrders = _DemoCheckoutRepository(db, () => uid,
     flagEnabled: flagEnabled, emulatorsConnected: true);
+  late final VendorMenuRepository _demoMenu = FirebaseVendorMenuRepository(db, () => uid,
+    deletionAllowed: () => emulatorMenuDeletionAllowed(
+      flagEnabled: const bool.fromEnvironment('EMULATOR_FOOD_DELETE', defaultValue: false),
+      checkoutAllowed: _demoOrders.canCheckout,
+      publicQueueCountsEnabled: _demoOrders.usesPublicQueueCounts));
 
   @override
   OrderRepository get orderRepository => _demoOrders;
+  @override
+  VendorMenuRepository get menuRepository => _demoMenu;
 }
 
 class _DemoCheckoutRepository extends FirebaseOrderRepository {

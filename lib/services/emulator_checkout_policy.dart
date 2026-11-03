@@ -23,3 +23,9 @@ bool emulatorCheckoutAllowed({
   apiKey == checkoutDemoApiKey && appId == checkoutDemoAppId &&
   _checkoutDemoEndpoints.contains(firestoreHost) &&
   sslEnabled == false;
+
+// Only main_emulator.dart supplies the verified checkout environment here.
+// A separate explicit flag is required; neither real-pilot flag enables this.
+bool emulatorMenuDeletionAllowed({required bool flagEnabled,
+  required bool checkoutAllowed, required bool publicQueueCountsEnabled}) =>
+  flagEnabled && checkoutAllowed && publicQueueCountsEnabled;

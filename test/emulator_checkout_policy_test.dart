@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:my_fyp_app/services/emulator_checkout_policy.dart';
 import 'package:my_fyp_app/services/order_repository.dart';
+import 'package:my_fyp_app/services/vendor_menu_repository.dart';
 
 // Reading the normal repository's gate must not even access a Firebase client.
 class _NoNetworkFirestore implements FirebaseFirestore {
@@ -27,6 +28,10 @@ void main() {
               expect(allowed(debug: debug, entry: entry, flag: flag, name: name, project: project),
                 debug && entry && flag && name == checkoutDemoAppName && project == checkoutDemoProject,
                 reason: '$debug / $entry / $flag / $name / $project');
+              expect(emulatorMenuDeletionAllowed(flagEnabled: true,
+                checkoutAllowed: allowed(debug: debug, entry: entry, flag: flag, name: name, project: project),
+                publicQueueCountsEnabled: true),
+                debug && entry && flag && name == checkoutDemoAppName && project == checkoutDemoProject);
             }
           }
         }
@@ -51,5 +56,17 @@ void main() {
     final normal = FirebaseOrderRepository(_NoNetworkFirestore(), () => 'student');
     expect(normal.canCheckout, false);
     expect(normal.canProcessOrders, false);
+    expect(FirebaseVendorMenuRepository(_NoNetworkFirestore(), () => 'vendor').canDeleteFood, false);
+  });
+
+  test('synthetic Food Delete requires its own flag and both accepted emulator modes', () {
+    for (final flag in [true, false]) {
+      for (final checkout in [true, false]) {
+        for (final counts in [true, false]) {
+          expect(emulatorMenuDeletionAllowed(flagEnabled: flag, checkoutAllowed: checkout,
+            publicQueueCountsEnabled: counts), flag && checkout && counts);
+        }
+      }
+    }
   });
 }
