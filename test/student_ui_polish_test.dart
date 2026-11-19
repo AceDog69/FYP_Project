@@ -195,29 +195,30 @@ void main() {
     expect(find.text('No orders yet'), findsOneWidget); expect(find.text('Mark as Ready'), findsNothing);
   });
 
-  testWidgets('Queue emphasizes exact orders ahead and approximate ETA; explanation expands separately', (tester) async {
+  testWidgets('Queue emphasizes unstarted tickets and unavailable parallel ETA; explanation expands separately', (tester) async {
     final repo = orders(), receipt = receiptFor(queue.queueRequest('4'), 4);
-    repo.receipts[receipt.order.id] = receipt; repo.publicProgress['alpha'] = queue.progress('alpha', 3, true);
+    repo.receipts[receipt.order.id] = receipt; repo.publicProgress['alpha'] = queue.progress('alpha', 3, 2);
     await mount(tester, StudentQueueScreen(repository: repo, studentUid: 'student', clock: () => receipt.order.createdAt.toDate()));
-    await tester.pumpAndSettle(); expect(find.text('Orders ahead: 2'), findsOneWidget);
-    expect(find.text('Approx. 45 min until Ready'), findsOneWidget);
+    await tester.pumpAndSettle(); expect(find.text('Orders ahead: 1'), findsOneWidget);
+    expect(find.text('Waiting time unavailable'), findsOneWidget);
+    expect(find.textContaining('unavailable while orders are prepared in parallel'), findsOneWidget);
     final metric = tester.widget<Text>(find.byKey(ValueKey('queue-ahead-${receipt.order.id}')));
     expect((metric.textSpan! as TextSpan).children!.last.style!.fontSize, 32);
     expect(tester.widget<Text>(find.byKey(ValueKey('queue-eta-${receipt.order.id}'))).style!.fontSize, 24);
-    expect(find.textContaining('Uses the full preparation allowance'), findsNothing);
+    expect(find.textContaining('unavailable while orders are prepared in parallel'), findsOneWidget);
     await press(tester, find.text('How this estimate works'));
-    expect(find.textContaining('Uses the full preparation allowance'), findsOneWidget);
+    expect(find.textContaining('unavailable while orders are prepared in parallel'), findsNWidgets(2));
     await press(tester, find.text('View Order Details')); expect(find.byType(OrderDetails), findsOneWidget);
   });
 
   testWidgets('Queue live Pending Preparing Ready Completed uses unchanged time and history semantics', (tester) async {
     final repo = orders(), receipt = receiptFor(queue.queueRequest('1'), 1); var order = receipt.order;
-    repo.receipts[order.id] = receipt; repo.publicProgress['alpha'] = queue.progress('alpha', 1, false);
+    repo.receipts[order.id] = receipt; repo.publicProgress['alpha'] = queue.progress('alpha', 1, 0);
     final clock = progressed(order).preparingAt!.toDate().add(const Duration(minutes: 5));
     await mount(tester, StudentQueueScreen(repository: repo, studentUid: 'student', clock: () => clock));
-    await tester.pumpAndSettle(); expect(find.text('Approx. 15 min until Ready'), findsOneWidget);
+    await tester.pumpAndSettle(); expect(find.text('Waiting time unavailable'), findsOneWidget);
     order = progressed(order); repo.receipts[order.id] = OrderReceipt(order, receipt.items);
-    repo.publicProgress['alpha'] = queue.progress('alpha', 2, true); repo.emit(); await tester.pumpAndSettle();
+    repo.publicProgress['alpha'] = queue.progress('alpha', 2, 1); repo.emit(); await tester.pumpAndSettle();
     expect(find.widgetWithText(OrderStatusBadge, 'Preparing'), findsOneWidget); expect(find.text('Approx. 10 min until Ready'), findsOneWidget);
     order = progressed(order); repo.receipts[order.id] = OrderReceipt(order, receipt.items); repo.emit(); await tester.pumpAndSettle();
     expect(find.text('Ready for pickup'), findsOneWidget); expect(find.textContaining('min until Ready'), findsNothing);
@@ -232,7 +233,7 @@ void main() {
     await mount(tester, StudentQueueScreen(repository: repo, studentUid: 'student')); await tester.pumpAndSettle();
     expect(find.text('Orders ahead: Unavailable'), findsOneWidget); expect(find.text('Waiting time unavailable'), findsOneWidget);
     expect(find.textContaining('No position or ETA is assumed.'), findsOneWidget);
-    repo.publicProgress['alpha'] = queue.progress('alpha', 1, false); repo.progressCached = true; repo.emit(); await tester.pumpAndSettle();
+    repo.publicProgress['alpha'] = queue.progress('alpha', 1, 0); repo.progressCached = true; repo.emit(); await tester.pumpAndSettle();
     expect(find.textContaining('Cached queue —'), findsOneWidget); expect(find.textContaining('min until Ready'), findsNothing);
     repo.progressCached = false; repo.errorTarget = 'progress:alpha'; repo.streamError = StateError('offline'); repo.emit();
     await tester.pumpAndSettle(); expect(find.text('Unable to verify this stall’s queue progress.'), findsOneWidget);
@@ -245,7 +246,7 @@ void main() {
 
   testWidgets('elapsed Preparing estimate is a visible warning and never a fabricated zero-minute ETA', (tester) async {
     final repo = orders(), receipt = receiptFor(queue.queueRequest('1'), 1), preparing = progressed(receipt.order);
-    repo.receipts[preparing.id] = OrderReceipt(preparing, receipt.items); repo.publicProgress['alpha'] = queue.progress('alpha', 2, true);
+    repo.receipts[preparing.id] = OrderReceipt(preparing, receipt.items); repo.publicProgress['alpha'] = queue.progress('alpha', 2, 1);
     await mount(tester, StudentQueueScreen(repository: repo, studentUid: 'student',
       clock: () => preparing.preparingAt!.toDate().add(const Duration(minutes: 30)))); await tester.pumpAndSettle();
     expect(find.text('Initial estimate elapsed'), findsOneWidget); expect(find.text('Orders ahead: 0'), findsOneWidget);
@@ -257,11 +258,11 @@ void main() {
     final repo = orders()..loading = true;
     final alpha = receiptFor(queue.queueRequest('1'), 4), beta = receiptFor(queue.queueRequest('2', vendor: 'beta'), 1);
     repo.receipts[alpha.order.id] = alpha; repo.receipts[beta.order.id] = beta;
-    repo.publicProgress['alpha'] = queue.progress('alpha', 3, true); repo.publicProgress['beta'] = queue.progress('beta', 1, false);
+    repo.publicProgress['alpha'] = queue.progress('alpha', 3, 2); repo.publicProgress['beta'] = queue.progress('beta', 1, 0);
     await mount(tester, StudentQueueScreen(repository: repo, studentUid: 'student'));
     expect(find.text('My Queue'), findsOneWidget); expect(find.byType(CircularProgressIndicator), findsOneWidget);
     repo.loading = false; repo.emit(); await tester.pumpAndSettle();
-    expect(find.descendant(of: find.byKey(ValueKey('queue-${alpha.order.id}')), matching: find.text('Orders ahead: 2')), findsOneWidget);
+    expect(find.descendant(of: find.byKey(ValueKey('queue-${alpha.order.id}')), matching: find.text('Orders ahead: 1')), findsOneWidget);
     final other = find.byKey(ValueKey('queue-${beta.order.id}')); await reveal(tester, other);
     expect(find.descendant(of: other, matching: find.text('Orders ahead: 0')), findsOneWidget);
     repo.errorTarget = 'orders'; repo.streamError = StateError('offline'); repo.emit(); await tester.pumpAndSettle();
@@ -317,7 +318,7 @@ void main() {
       catalogRepo.stallItems[0] = listing('alpha', name: 'A long campus kitchen name with lunch specials');
       catalogRepo.foodItems['alpha']![0] = food('bowl', name: 'A large rice bowl with vegetables and a very long name');
       final receipt = receiptFor(queue.queueRequest('1'), 1); orderRepo.receipts[receipt.order.id] = receipt;
-      orderRepo.publicProgress['alpha'] = queue.progress('alpha', 1, false);
+      orderRepo.publicProgress['alpha'] = queue.progress('alpha', 1, 0);
       await mount(tester, StudentHome(repository: catalogRepo, onStall: (_) {}), size: size, scale: scale); await tester.pumpAndSettle();
       await press(tester, find.widgetWithText(ChoiceChip, 'Chinese'));
       await reveal(tester, find.widgetWithText(FilledButton, 'View Menu')); expect(tester.takeException(), isNull);

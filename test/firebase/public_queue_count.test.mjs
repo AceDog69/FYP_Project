@@ -59,13 +59,17 @@ async function count(db, uid = 'vendor') { return (await getDocFromServer(countR
 async function malicious(db, q, mutate) {
   const p = await countPayload(db, q); mutate(p); const batch = writeBatch(db); countWrites(batch, db, p); return batch.commit();
 }
+async function rawProgressAndCount(db, order, queue, summary) {
+  const batch = writeBatch(db); progressWrites(batch,db,order,queue);
+  batch.set(countRef(db,order.vendorUid),summary); return batch.commit();
+}
 
 test('no-order Student reads missing as unavailable and verified empty queue as zero', async () => {
   const owner = await vendor(env), student = await account(env, 'newStudent');
   assert.equal((await getDocFromServer(countRef(student))).exists(), false);
   await bootstrapCount(owner); assert.equal(await count(student), 0);
   const data = (await getDocFromServer(countRef(student))).data();
-  assert.deepEqual(Object.keys(data).sort(), ['schemaVersion','vendorUid','lastTicket','nextTicket','preparing','count','updatedAt'].sort());
+  assert.deepEqual(Object.keys(data).sort(), ['schemaVersion','vendorUid','lastTicket','nextTicket','pendingCount','preparingCount','count','updatedAt'].sort());
 });
 for (const size of [1,2]) test(`confirmed ${size}-food checkout increments once; same-ID retry preserves counter and count`, async () => {
   const {owner,student,q} = await setup(size); const order = await submitCount(student, q);
@@ -140,9 +144,9 @@ for (const [name, mutate] of [
 });
 test('direct summary writes/deletes, anonymous reads and collection listing are denied', async () => {
   const {owner,student} = await setup(); const otherVendor = await vendor(env,'otherVendor');
-  await deny(setDoc(countRef(student),countData('vendor',0,1,false)));
+  await deny(setDoc(countRef(student),countData('vendor',0,1,0)));
   await deny(updateDoc(countRef(student),{count:7,updatedAt:serverTimestamp()}));
-  await deny(setDoc(countRef(otherVendor),countData('vendor',0,1,false)));
+  await deny(setDoc(countRef(otherVendor),countData('vendor',0,1,0)));
   await deny(deleteDoc(countRef(owner))); await deny(getDocFromServer(countRef(env.unauthenticatedContext().firestore())));
   await deny(getDocs(collection(student,'stallQueueCounts'))); await deny(getDocs(collection(student,'checkoutCounters')));
 });
@@ -152,7 +156,7 @@ test('direct order/FCFS forgery cannot bypass count coupling or Student/Vendor b
   await deny(updateDoc(orderRef(wrong,order.orderId),{status:'Preparing',statusRevision:1,statusUpdatedAt:serverTimestamp(),preparingAt:serverTimestamp()}));
   const batch = writeBatch(owner); progressWrites(batch,owner,order,initialQueue()); await deny(batch.commit());
   const invalid = writeBatch(owner); progressWrites(invalid,owner,order,initialQueue());
-  invalid.set(countRef(owner),countData('vendor',1,3,true)); await deny(invalid.commit());
+  invalid.set(countRef(owner),countData('vendor',1,3,1)); await deny(invalid.commit());
 });
 test('privacy denies other Students orders, requests and items while allowing public counts', async () => {
   const {student,q} = await setup(2); await submitCount(student,q); const observer = await account(env,'observer');
@@ -169,12 +173,25 @@ test('stale/malformed projections cannot be read as confirmed; owner repairs fro
   }
 });
 for (const state of ['Pending','Preparing','Ready','Completed']) test(`existing-stall bootstrap from legacy ${state} preserves tickets and derives exact count`, async () => {
-  await switchRules(legacy); const owner = await vendor(env), student = await account(env,'student');
-  const q = await draft(student); await prepare(student,q); let order = await submit(student,'student',q.submissionId);
-  // Use the legacy processing helper until the requested pre-migration state.
-  const {advance} = await import('./fcfs_helpers.mjs');
-  while (order.status !== state) order = await advance(owner,order);
-  await switchRules(candidate); await bootstrapCount(existingDb('vendor'));
+  const {owner,student,q} = await setup(); const pending = await submitCount(student,q);
+  // Seed a valid historical single-slot cursor/order snapshot as existing data;
+  // no production migration or history reset is performed by this test.
+  await env.withSecurityRulesDisabled(async context => {
+    const db = context.firestore(), at = serverTimestamp();
+    const revision = {Pending:0,Preparing:1,Ready:2,Completed:3}[state];
+    const fields = {status:state,statusRevision:revision,statusUpdatedAt:at};
+    if (state !== 'Pending') fields.preparingAt = at;
+    if (['Ready','Completed'].includes(state)) fields.readyAt = at;
+    if (state === 'Completed') fields.completedAt = at;
+    await updateDoc(orderRef(db,pending.orderId),fields);
+    if (state !== 'Pending') await setDoc(queueRef(db),{
+      schemaVersion:1,vendorUid:'vendor',nextTicket:2,
+      preparingOrderId:state === 'Preparing' ? pending.orderId : null,
+      revision:state === 'Preparing' ? 1 : 2,updatedAt:at,
+    });
+    await deleteDoc(countRef(db));
+  });
+  await bootstrapCount(existingDb('vendor'));
   assert.equal(await count(existingDb('student')),['Ready','Completed'].includes(state)?0:1);
   assert.equal((await getDocFromServer(counterRef(existingDb('vendor')))).data().lastTicket,1);
 });
@@ -214,20 +231,28 @@ test('over-limit, duplicate foods and invalid quantities cannot enter a prepared
   }
   assert.equal(await count(student),0);
 });
-test('a mathematically matching projection cannot authorize FCFS skip or a second Preparing slot', async () => {
+test('parallel count permits consecutive starts but rejects skipping a Pending ticket', async () => {
   const {owner,student,q} = await setup(); const first = await submitCount(student,q);
   const q2 = await draft(student); await prepare(student,q2); const second = await submitCount(student,q2);
-  const skip = writeBatch(owner); progressWrites(skip,owner,second,initialQueue());
-  skip.set(countRef(owner),countData('vendor',2,2,true)); await deny(skip.commit());
-  const preparing = await advanceCount(owner,first), cursor = (await getDocFromServer(queueRef(owner))).data();
-  const parallel = writeBatch(owner); progressWrites(parallel,owner,second,cursor);
-  parallel.set(countRef(owner),countData('vendor',2,3,true)); await deny(parallel.commit());
-  assert.equal(await count(student),2); await advanceCount(owner,preparing); assert.equal(await count(student),1);
+  const q3 = await draft(student); await prepare(student,q3); const third = await submitCount(student,q3);
+  await deny(rawProgressAndCount(owner,third,initialQueue(),countData('vendor',3,2,1)));
+  const firstPreparing = await advanceCount(owner,first);
+  const cursor = (await getDocFromServer(queueRef(owner))).data();
+  await deny(rawProgressAndCount(owner,third,cursor,countData('vendor',3,3,2)));
+  const secondPreparing = await advanceCount(owner,second);
+  assert.equal((await getDocFromServer(queueRef(owner))).data().preparingCount,2);
+  assert.equal(await count(student),3);
+  const thirdPreparing = await advanceCount(owner,third);
+  assert.equal((await getDocFromServer(queueRef(owner))).data().preparingCount,3);
+  const firstReady = await advanceCount(owner,firstPreparing);
+  assert.equal(await count(student),2);
+  await advanceCount(owner,firstReady); await advanceCount(owner,secondPreparing); await advanceCount(owner,thirdPreparing);
+  assert.equal(await count(student),0);
 });
 test('numeric equality cannot disguise malformed double-valued projection fields as canonical integers', async () => {
   const {owner,student,q} = await setup(); await submitCount(student,q);
   assert.ok(env.projectId.startsWith('demo-s4b-'));
-  for (const field of ['schemaVersion','lastTicket','nextTicket','count']) {
+  for (const field of ['schemaVersion','lastTicket','nextTicket','pendingCount','preparingCount','count']) {
     // An emulator-only privileged fixture forces doubleValue=1.0. The JS SDK
     // normally serializes integer-valued JS Numbers as integerValue, so a plain
     // setDoc(...1.0) would NOT test Firestore's cross-numeric equality boundary.

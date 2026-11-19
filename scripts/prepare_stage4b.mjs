@@ -4,9 +4,10 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export function stage4bRules(source, ordering = true) {
+  source = source.replace(/\r\n/g, '\n');
   function replaceOnce(from, to) {
     if (source.split(from).length !== 2) throw new Error('Stage 4B Rules anchor changed: ' + from.slice(0, 80));
-    source = source.replace(from, to);
+    source = source.replace(from, () => to);
   }
   if (!source.includes('function menuDeletesEnabled() { return false; }')) throw new Error('Deletion must remain closed');
   if (ordering) replaceOnce('function checkoutWritesEnabled() { return false; }', 'function checkoutWritesEnabled() { return true; }');
@@ -19,16 +20,24 @@ export function stage4bRules(source, ordering = true) {
     }
     function countQueueAfter(uid) {
       return existsAfter(queuePath(uid)) ? getAfter(queuePath(uid)).data
-        : {'nextTicket':1, 'preparingOrderId':null, 'revision':0};
+        : {'schemaVersion':2, 'nextTicket':1, 'preparingCount':0, 'revision':0};
+    }
+    function queuePreparingCount(q) {
+      return q.schemaVersion == 1 ? (q.preparingOrderId != null ? 1 : 0) : q.preparingCount;
     }
     function countMatches(d, uid, last, q) {
-      return d == {'schemaVersion':1, 'vendorUid':uid, 'lastTicket':last,
-          'nextTicket':q.nextTicket, 'preparing':q.preparingOrderId != null,
-          'count':last - q.nextTicket + 1 + (q.preparingOrderId != null ? 1 : 0), 'updatedAt':d.updatedAt}
-        && d.updatedAt is timestamp && d.schemaVersion is int && d.lastTicket is int
-        && d.nextTicket is int && d.preparing is bool && last is int && last >= 0 && last <= 2147483647
+      let preparingCount = queuePreparingCount(q);
+      let pendingCount = last - q.nextTicket + 1;
+      return d == {'schemaVersion':2, 'vendorUid':uid, 'lastTicket':last,
+          'nextTicket':q.nextTicket, 'pendingCount':pendingCount, 'preparingCount':preparingCount,
+          'count':pendingCount + preparingCount, 'updatedAt':d.updatedAt}
+        && d.updatedAt is timestamp && d.schemaVersion == 2 && d.lastTicket is int
+        && d.nextTicket is int && d.pendingCount is int && d.preparingCount is int
+        && last is int && last >= 0 && last <= 2147483647
         && q.nextTicket is int && q.nextTicket >= 1 && q.nextTicket <= last + 1
-        && d.count is int && d.count >= 0 && d.count <= last;
+        && preparingCount is int && preparingCount >= 0 && preparingCount <= q.nextTicket - 1
+        && pendingCount >= 0 && d.count is int && d.count == pendingCount + preparingCount
+        && d.count >= 0 && d.count <= last;
     }
     function countCurrent(d, uid) { return countMatches(d, uid, lastTicketBefore(uid), queueBefore(uid)); }
     function countAfter(d, uid) { return countMatches(d, uid, lastTicketAfter(uid), countQueueAfter(uid)); }
@@ -38,7 +47,7 @@ export function stage4bRules(source, ordering = true) {
     }
     function countForQueue(uid, q) {
       let d = getAfter(countPath(uid)).data;
-      return d.nextTicket == q.nextTicket && d.preparing == (q.preparingOrderId != null)
+      return d.nextTicket == q.nextTicket && d.preparingCount == q.preparingCount
         && d.updatedAt == request.time;
     }
     function bootstrapCounter(uid) {
@@ -53,15 +62,22 @@ export function stage4bRules(source, ordering = true) {
     }
     function bootstrapQueue(uid) {
       let q = getAfter(queuePath(uid)).data;
-      return q.keys().hasAll(['schemaVersion','vendorUid','nextTicket','preparingOrderId','revision','updatedAt'])
-        && q.keys().hasOnly(['schemaVersion','vendorUid','nextTicket','preparingOrderId','revision','updatedAt'])
-        && q.schemaVersion == 1 && q.vendorUid == uid && q.updatedAt is timestamp
-        && q.nextTicket is int && q.nextTicket >= 2 && q.revision is int
-        && q.revision == 2 * (q.nextTicket - 1) - (q.preparingOrderId != null ? 1 : 0)
-        && (q.preparingOrderId == null ||
-          (getAfter(orderPath(q.preparingOrderId)).data.vendorUid == uid
-            && getAfter(orderPath(q.preparingOrderId)).data.status == 'Preparing'
-            && getAfter(orderPath(q.preparingOrderId)).data.ticket == q.nextTicket - 1));
+      return q.schemaVersion == 1
+        ? (q.keys().hasAll(['schemaVersion','vendorUid','nextTicket','preparingOrderId','revision','updatedAt'])
+          && q.keys().hasOnly(['schemaVersion','vendorUid','nextTicket','preparingOrderId','revision','updatedAt'])
+          && q.vendorUid == uid && q.updatedAt is timestamp && q.nextTicket is int && q.nextTicket >= 2
+          && q.revision is int && q.revision == 2 * (q.nextTicket - 1) - (q.preparingOrderId != null ? 1 : 0)
+          && (q.preparingOrderId == null ||
+            (getAfter(orderPath(q.preparingOrderId)).data.vendorUid == uid
+              && getAfter(orderPath(q.preparingOrderId)).data.status == 'Preparing'
+              && getAfter(orderPath(q.preparingOrderId)).data.ticket == q.nextTicket - 1)))
+        : (q.keys().hasAll(['schemaVersion','vendorUid','nextTicket','preparingCount','revision','lastTransitionOrderId','updatedAt'])
+          && q.keys().hasOnly(['schemaVersion','vendorUid','nextTicket','preparingCount','revision','lastTransitionOrderId','updatedAt'])
+          && q.schemaVersion == 2 && q.vendorUid == uid && q.updatedAt is timestamp
+          && q.nextTicket is int && q.nextTicket >= 2 && q.nextTicket <= 2147483648
+          && q.preparingCount is int && q.preparingCount >= 0 && q.preparingCount <= q.nextTicket - 1
+          && q.revision is int && q.revision == 2 * (q.nextTicket - 1) - q.preparingCount
+          && q.lastTransitionOrderId is string && q.lastTransitionOrderId.matches('^[A-Za-z0-9]{20}$'));
     }
     function countBootstrap(uid) {
       return (!existsAfter(counterPath(uid)) || bootstrapCounter(uid))
@@ -83,8 +99,9 @@ export function stage4bRules(source, ordering = true) {
         && countAfter(request.resource.data, vendorUid);
     }
     function safeId(id)`);
-  replaceOnce('allow read: if studentMenuReader(vendorUid) || configuredVendor(vendorUid);',
-    'allow get: if configuredVendor(vendorUid);\n      allow list: if false;');
+  const counterRead = 'allow read: if studentMenuReader(vendorUid) || configuredVendor(vendorUid);';
+  if (source.split(counterRead).length !== 2) throw new Error('Stage 4B checkout counter read rule anchor changed');
+  source = source.replace(counterRead, () => 'allow get: if configuredVendor(vendorUid);\n      allow list: if false;');
   replaceOnce('&& request.resource.data.lastTicket == 1;',
     '&& request.resource.data.lastTicket == 1 && countForCounter(vendorUid, 1);');
   replaceOnce('&& request.resource.data.lastTicket == resource.data.lastTicket + 1;',

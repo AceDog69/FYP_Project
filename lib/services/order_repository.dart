@@ -36,7 +36,7 @@ String orderError(Object error) {
 class _CheckoutObservation {
   String? state;
   int? ticket, nextTicket;
-  bool? preparing;
+  int? preparingCount;
 }
 
 class FirebaseOrderRepository extends OrderRepository {
@@ -85,7 +85,7 @@ class FirebaseOrderRepository extends OrderRepository {
       try {
         return await db.runTransaction<T>((tx) {
           observed.state = null;
-          observed.ticket = null; observed.nextTicket = null; observed.preparing = null;
+          observed.ticket = null; observed.nextTicket = null; observed.preparingCount = null;
           return action(tx, observed);
         }, maxAttempts: 8);
       } on FirebaseException catch (error) {
@@ -113,7 +113,7 @@ class FirebaseOrderRepository extends OrderRepository {
           final count = usesPublicQueueCounts ? PublicQueueCount.decode(request.vendorUid, counter.data()) : null;
           if (usesPublicQueueCounts && count == null) rethrow;
           if (count != null && observed.nextTicket != null &&
-              (count.nextTicket != observed.nextTicket || count.preparing != observed.preparing)) {
+              (count.nextTicket != observed.nextTicket || count.preparingCount != observed.preparingCount)) {
             continue; // Independently confirmed concurrent Vendor progress.
           }
           final ticket = count?.lastTicket ?? counter.data()?['lastTicket'] ?? 0;
@@ -171,7 +171,7 @@ class FirebaseOrderRepository extends OrderRepository {
       if (publicCount?.lastTicket == 2147483647) {
         throw const AccountException('This stall has reached the supported ticket limit.');
       }
-      observed.nextTicket = publicCount?.nextTicket; observed.preparing = publicCount?.preparing;
+      observed.nextTicket = publicCount?.nextTicket; observed.preparingCount = publicCount?.preparingCount;
       final previousTicket = counter.data()?['lastTicket'] ?? 0;
       if (previousTicket is int) {
         observed.ticket = previousTicket;
@@ -217,7 +217,7 @@ class FirebaseOrderRepository extends OrderRepository {
         'lastOrderId': intent.id, 'updatedAt': FieldValue.serverTimestamp()});
       if (publicCount != null) {
         tx.set(db.collection('stallQueueCounts').doc(intent.vendorUid), {
-          ...queueCountFields(intent.vendorUid, ticket, publicCount.nextTicket, publicCount.preparing),
+          ...queueCountFields(intent.vendorUid, ticket, publicCount.nextTicket, publicCount.preparingCount),
           'updatedAt': FieldValue.serverTimestamp(),
         });
       }

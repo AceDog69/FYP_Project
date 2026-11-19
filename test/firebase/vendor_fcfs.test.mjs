@@ -48,8 +48,8 @@ const read=(db,order)=>getDocFromServer(orderRef(db,order.orderId)).then(s=>s.da
 async function raw(db,order,queue,mutate=()=>{}) {
   const batch=writeBatch(db);progressWrites(batch,db,order,queue);mutate(batch);return batch.commit();
 }
-const queueData=(uid,nextTicket,preparingOrderId,revision)=>({schemaVersion:1,vendorUid:uid,nextTicket,
-  preparingOrderId,revision,updatedAt:serverTimestamp()});
+const queueData=(uid,nextTicket,preparingCount,lastTransitionOrderId,revision)=>({schemaVersion:2,vendorUid:uid,nextTicket,
+  preparingCount,lastTransitionOrderId,revision,updatedAt:serverTimestamp()});
 
 test('own Vendor progresses legacy Pending through all four states with exact immutable two-food receipt',async()=>{
   const {owner,student,orders:[pending]}=await setup(1);const id=pending.orderId;
@@ -83,21 +83,35 @@ test('ticket 2 cannot start before ticket 1 even with a forged initial cursor',a
   await assertSucceeds(advance(owner,first));
 });
 
-test('single preparation slot blocks the next ticket until Ready; completion need not block preparation',async()=>{
-  const {owner,orders:[first,second]}=await setup();
-  const preparing=await advance(owner,first),cursor=(await getDocFromServer(queueRef(owner))).data();
-  await deny(raw(owner,second,cursor));
-  const ready=await advance(owner,preparing);await assertSucceeds(advance(owner,second));
-  await assertSucceeds(advance(owner,ready));
-  assert.equal((await read(owner,first)).status,'Completed');assert.equal((await read(owner,second)).status,'Preparing');
+test('sequential starts allow parallel preparation and Ready transitions complete out of order',async()=>{
+  const {owner,orders:[first,second,third]}=await setup(3);
+  const firstPreparing=await advance(owner,first);
+  await assert.rejects(advance(owner,third),/ineligible-order/);
+  const secondPreparing=await advance(owner,second);
+  let cursor=(await getDocFromServer(queueRef(owner))).data();
+  assert.equal(cursor.nextTicket,3); assert.equal(cursor.preparingCount,2);
+  const secondReady=await advance(owner,secondPreparing); // Ticket 2 may become Ready before ticket 1.
+  cursor=(await getDocFromServer(queueRef(owner))).data();
+  assert.equal(cursor.preparingCount,1);
+  const thirdPreparing=await advance(owner,third);
+  assert.equal((await getDocFromServer(queueRef(owner))).data().nextTicket,4);
+  const firstReady=await advance(owner,firstPreparing);
+  const thirdReady=await advance(owner,thirdPreparing);
+  cursor=(await getDocFromServer(queueRef(owner))).data();
+  assert.equal(cursor.preparingCount,0);
+  await advance(owner,firstReady);
+  await advance(owner,secondReady);
+  await advance(owner,thirdReady);
+  assert.deepEqual((await Promise.all([first,second,third].map(o=>read(owner,o)))).map(o=>o.status),
+    ['Completed','Completed','Completed']);
 });
 
 test('cursor cannot be pre-created, advanced, cleared, reset or deleted without its actual paired order',async()=>{
   const {owner,orders:[first,second]}=await setup();
-  for(const cursor of [queueData('vendor',1,null,1),queueData('vendor',2,null,1),
-    queueData('vendor',3,second.orderId,1),queueData('vendor',2,first.orderId,1)]) await deny(setDoc(queueRef(owner),cursor));
+  for(const cursor of [queueData('vendor',1,0,first.orderId,1),queueData('vendor',2,0,first.orderId,1),
+    queueData('vendor',3,1,second.orderId,1),queueData('vendor',2,1,first.orderId,1)]) await deny(setDoc(queueRef(owner),cursor));
   await advance(owner,first);
-  for(const values of [{preparingOrderId:null},{nextTicket:1},{nextTicket:3},{revision:99},{vendorUid:'other'}])
+  for(const values of [{preparingCount:0},{nextTicket:1},{nextTicket:3},{revision:99},{vendorUid:'other'}])
     await deny(updateDoc(queueRef(owner),{...values,updatedAt:serverTimestamp()}));
   await deny(deleteDoc(queueRef(owner)));
 });
@@ -118,7 +132,7 @@ test('Students, wrong Vendors, unconfigured Vendors and anonymous clients cannot
   const anonymous=env.unauthenticatedContext().firestore();
   for(const attacker of [student,other,unconfigured,anonymous]) {
     await deny(raw(attacker,first,initialQueue()));
-    await deny(setDoc(queueRef(attacker),queueData('vendor',2,first.orderId,1)));
+    await deny(setDoc(queueRef(attacker),queueData('vendor',2,1,first.orderId,1)));
     await deny(getDocFromServer(queueRef(attacker)));
   }
   let order=await assertSucceeds(advance(owner,first));
@@ -144,7 +158,7 @@ test('invalid transitions, unknown states, missing revisions and forged server t
     {status:'Preparing',statusRevision:1,statusUpdatedAt:serverTimestamp()},
   ]) {
     const batch=writeBatch(owner);batch.update(orderRef(owner,first.orderId),fields);
-    const cursor=queueData('vendor',2,first.orderId,1);
+    const cursor=queueData('vendor',2,1,first.orderId,1);
     batch.set(queueRef(owner),cursor);batch.set(progressRef(owner),progressData('vendor',cursor));await deny(batch.commit());
   }
   await assertSucceeds(advance(owner,first));
@@ -175,18 +189,18 @@ test('transition timestamps and revision remain immutable on subsequent transiti
 
 test('forged cursor revision, extra fields, skipped ticket and mismatched order ID fail in paired writes',async()=>{
   const {owner,orders:[first,second]}=await setup();
-  for(const values of [{nextTicket:3},{revision:2},{preparingOrderId:second.orderId},
+  for(const values of [{nextTicket:3},{revision:2},{preparingCount:2},
     {vendorUid:'other'},{updatedAt:new Date(0)},{extra:true}]) {
-    await deny(raw(owner,first,initialQueue(),b=>b.set(queueRef(owner),{...queueData('vendor',2,first.orderId,1),...values})));
+    await deny(raw(owner,first,initialQueue(),b=>b.set(queueRef(owner),{...queueData('vendor',2,1,first.orderId,1),...values})));
   }
   await assertSucceeds(advance(owner,first));
 });
 
-test('one batch cannot start two orders or release one slot and claim another',async()=>{
+test('one atomic batch cannot pair two status transitions with a single cursor update',async()=>{
   const {owner,orders:[first,second]}=await setup();
   await deny(raw(owner,first,initialQueue(),b=>progressWrites(b,owner,second,initialQueue())));
   const preparing=await advance(owner,first),queue=(await getDocFromServer(queueRef(owner))).data();
-  await deny(raw(owner,preparing,queue,b=>progressWrites(b,owner,second,{...queue,preparingOrderId:null})));
+  await deny(raw(owner,preparing,queue,b=>progressWrites(b,owner,second,queue)));
   await assertSucceeds(advance(owner,preparing));await assertSucceeds(advance(owner,second));
 });
 
@@ -217,23 +231,29 @@ test('Ready/start race leaves a valid slot and a safe explicit retry for ticket 
   const {owner,orders:[first,second]}=await setup();const preparing=await advance(owner,first);
   const secondClient=env.authenticatedContext('vendor').firestore();
   const results=await Promise.allSettled([advance(owner,preparing),advance(secondClient,second)]);
-  assert.equal(results[0].status,'fulfilled');
-  if(results[1].status==='rejected') {
-    const error=results[1].reason;assert.ok(error.message==='ineligible-order'||error.code==='permission-denied');
-    assert.equal(budgetDiagnostic.test(error.message),false);await assertSucceeds(advance(owner,second));
+  const rejected=results.filter(r=>r.status==='rejected');
+  assert.ok(rejected.length<=1, 'The queue serialized both competing transitions');
+  for(const result of rejected) {
+    assert.ok(result.reason.message==='stale-order'||result.reason.code==='permission-denied',
+      JSON.stringify({message:result.reason.message,code:result.reason.code,name:result.reason.name,stack:result.reason.stack}));
+    assert.equal(budgetDiagnostic.test(result.reason.message),false);
   }
-  assert.equal((await read(owner,first)).status,'Ready');assert.equal((await read(owner,second)).status,'Preparing');
+  let firstNow=await read(owner,first),secondNow=await read(owner,second);
+  if(firstNow.status==='Preparing') firstNow=await advance(owner,firstNow);
+  if(secondNow.status==='Pending') secondNow=await advance(secondClient,secondNow);
+  assert.equal(firstNow.status,'Ready');assert.equal(secondNow.status,'Preparing');
   assert.equal((await getDocFromServer(queueRef(owner))).data().nextTicket,3);
+  assert.equal((await getDocFromServer(queueRef(owner))).data().preparingCount,1);
 });
 
 test('stalls have independent FCFS cursors and cross-stall pairing is rejected',async()=>{
   const {owner,student,orders:[first]}=await setup(1);const other=await vendor(env,'other');
   const q=await draft(student,'student','other',1);await prepare(student,q);const second=await submit(student,'student',q.submissionId,'other');
-  await deny(raw(owner,first,initialQueue(),b=>b.set(queueRef(owner),queueData('vendor',2,second.orderId,1))));
+  await deny(raw(owner,first,initialQueue(),b=>b.set(queueRef(owner),queueData('vendor',2,1,second.orderId,1))));
   const results=await Promise.allSettled([advance(owner,first),advance(other,second)]);
   assert.ok(results.every(r=>r.status==='fulfilled'));
-  assert.equal((await getDocFromServer(queueRef(owner))).data().preparingOrderId,first.orderId);
-  assert.equal((await getDocFromServer(queueRef(other,'other'))).data().preparingOrderId,second.orderId);
+  assert.equal((await getDocFromServer(queueRef(owner))).data().preparingCount,1);
+  assert.equal((await getDocFromServer(queueRef(other,'other'))).data().preparingCount,1);
 });
 
 test('new checkout and processing serialize independently without changing ticket allocation or same-ID recovery',async()=>{

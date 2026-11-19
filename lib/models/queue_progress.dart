@@ -3,27 +3,33 @@ import 'confirmed_order.dart';
 
 /// Sanitized per-stall progress. An absent document is UNKNOWN, never zero.
 class QueueProgress {
-  const QueueProgress(this.vendorUid, this.nextTicket, this.preparing, this.revision, this.updatedAt,
-    {this.cached = false});
+  const QueueProgress(this.vendorUid, this.nextTicket, this.preparingCount, this.revision, this.updatedAt,
+      {this.cached = false, this.schemaVersion = 2})
+      : assert(preparingCount >= 0);
   const QueueProgress.unavailable(this.vendorUid, {this.cached = false})
-    : nextTicket = null, preparing = false, revision = 0, updatedAt = null;
+      : nextTicket = null, preparingCount = 0, revision = 0, updatedAt = null, schemaVersion = 2;
+
   final String vendorUid;
   final int? nextTicket;
-  final bool preparing, cached;
-  final int revision;
+  final int preparingCount, revision, schemaVersion;
+  final bool cached;
   final Timestamp? updatedAt;
+  bool get hasPreparingOrders => preparingCount > 0;
+
   factory QueueProgress.decode(String uid, Map<String, dynamic>? d, {bool cached = false}) {
-    if (d == null) {
-      return QueueProgress.unavailable(uid, cached: cached);
-    }
-    if (d.length != 6 || d['schemaVersion'] != 1 || d['vendorUid'] != uid ||
-        d['nextTicket'] is! int || d['nextTicket'] < 1 || d['nextTicket'] > 2147483648 ||
-        d['preparing'] is! bool || d['revision'] is! int || d['revision'] < 0 ||
-        d['revision'] != 2 * (d['nextTicket'] - 1) - (d['preparing'] == true ? 1 : 0) ||
-        d['updatedAt'] is! Timestamp) {
+    if (d == null) return QueueProgress.unavailable(uid, cached: cached);
+    final version = d['schemaVersion'];
+    final old = version == 1 && d.length == 6 && d['preparing'] is bool;
+    final preparingCount = old ? (d['preparing'] == true ? 1 : 0) : d['preparingCount'];
+    if ((!old && (version != 2 || d.length != 6 || preparingCount is! int || preparingCount < 0)) ||
+        d['vendorUid'] != uid || d['nextTicket'] is! int || d['nextTicket'] < 1 ||
+        d['nextTicket'] > 2147483648 || preparingCount > d['nextTicket'] - 1 ||
+        d['revision'] is! int || d['revision'] < 0 ||
+        d['revision'] != 2 * (d['nextTicket'] - 1) - preparingCount || d['updatedAt'] is! Timestamp) {
       throw const FormatException('Queue progress could not be verified.');
     }
-    return QueueProgress(uid, d['nextTicket'], d['preparing'], d['revision'], d['updatedAt'], cached: cached);
+    return QueueProgress(uid, d['nextTicket'], preparingCount as int, d['revision'], d['updatedAt'],
+      cached: cached, schemaVersion: old ? 1 : 2);
   }
 }
 
@@ -34,8 +40,9 @@ class QueueEstimate {
   final bool overdue;
 }
 
-/// Time UNTIL READY. No timer, historical average or checkout/security input.
-/// Uses the canonical preparation-time snapshot captured at confirmation.
+/// Estimates time until Ready without using a historical average. A Pending
+/// order has a valid position among tickets not yet started, but no defensible
+/// ETA once already-started orders can proceed in parallel.
 QueueEstimate estimateQueue(ConfirmedOrder order, QueueProgress? progress, DateTime asOf) {
   if (order.status == 'Ready' || order.status == 'Completed') {
     return QueueEstimate(ahead: 0, message: order.status == 'Ready'
@@ -52,11 +59,10 @@ QueueEstimate estimateQueue(ConfirmedOrder order, QueueProgress? progress, DateT
     if (order.ticket < next) {
       return const QueueEstimate(message: 'Synchronizing order status and queue progress…');
     }
-    final ahead = order.ticket - next + (progress.preparing ? 1 : 0);
-    return QueueEstimate(ahead: ahead, minutes: (ahead + 1) * order.preparationMinutes,
-      message: 'Approximate time until Ready. Uses the full preparation allowance for each waiting order; elapsed time on another order is not deducted.');
+    return QueueEstimate(ahead: order.ticket - next,
+      message: 'Waiting-time estimate unavailable while orders are prepared in parallel. Your ticket remains in the Pending sequence.');
   }
-  if (order.status != 'Preparing' || !progress.preparing || next != order.ticket + 1 || order.preparingAt == null) {
+  if (order.status != 'Preparing' || progress.preparingCount == 0 || next <= order.ticket || order.preparingAt == null) {
     return const QueueEstimate(message: 'Synchronizing order status and queue progress…');
   }
   final elapsed = asOf.difference(order.preparingAt!.toDate()).inMilliseconds;

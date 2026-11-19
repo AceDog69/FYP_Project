@@ -120,7 +120,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
           const SizedBox(height: 12),
           Text(_filter == 'All' ? 'All Orders' : _filter == 'Completed' ? 'Order History' : '$_filter Orders',
             style: Theme.of(context).textTheme.titleLarge), const SizedBox(height: 6),
-          const Text('Prepare tickets in order. One order may be Preparing at a time.', style: TextStyle(color: mutedText)),
+          const Text('Start tickets in order. Preparing orders can become Ready independently.', style: TextStyle(color: mutedText)),
           const SizedBox(height: 16),
           if (!widget.repository!.canProcessOrders) const Text('Order processing is disabled outside the local emulator demo.'),
           if (widget.repository!.canProcessOrders && !cursor.hasData && !cursor.hasError) const Text('Verifying preparation queue…'),
@@ -170,7 +170,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
             'Pending' => 'Start Preparing', 'Preparing' => 'Mark as Ready', _ => 'Mark Completed after collection',
           })),
         if (order.status == 'Pending' && cursor.hasData && !cursor.data!.permits(order))
-          const Text('Wait for the earlier ticket and an empty preparation slot.'),
+          const Text('Wait for the earlier Pending ticket to start first.'),
       ],
       const SizedBox(height: 8),
       OutlinedButton(style: OutlinedButton.styleFrom(minimumSize: const Size(double.infinity, 48)),

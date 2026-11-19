@@ -3,8 +3,11 @@ import { requestRef, orderRef, counterRef, payload, writePayload } from './check
 import { queueRef, initialQueue, progressWrites } from './fcfs_helpers.mjs';
 
 export const countRef = (db, uid = 'vendor') => doc(db, 'stallQueueCounts', uid);
-export const countData = (uid, last, next, preparing) => ({schemaVersion:1, vendorUid:uid,
-  lastTicket:last, nextTicket:next, preparing, count:last-next+1+(preparing?1:0), updatedAt:serverTimestamp()});
+export const countData = (uid, last, next, preparingCount) => ({schemaVersion:2, vendorUid:uid,
+  lastTicket:last, nextTicket:next, pendingCount:last-next+1, preparingCount,
+  count:last-next+1+preparingCount, updatedAt:serverTimestamp()});
+const queuePreparingCount = queue => queue.schemaVersion === 1
+  ? (queue.preparingOrderId === null ? 0 : 1) : queue.preparingCount;
 
 // Vendor-only initialization; Rules validate both canonical sources and their
 // boundary order references. No counter/cursor reset and no collection scan.
@@ -13,7 +16,7 @@ export async function bootstrapCount(db, uid = 'vendor') {
     const c = await tx.get(counterRef(db, uid)), q = await tx.get(queueRef(db, uid));
     await tx.get(countRef(db, uid));
     const queue = q.data() ?? initialQueue();
-    tx.set(countRef(db, uid), countData(uid, c.data()?.lastTicket ?? 0, queue.nextTicket, queue.preparingOrderId !== null));
+    tx.set(countRef(db, uid), countData(uid, c.data()?.lastTicket ?? 0, queue.nextTicket, queuePreparingCount(queue)));
   }, {maxAttempts:8});
 }
 export async function countPayload(db, q, read = getDocFromServer) {
@@ -23,7 +26,7 @@ export async function countPayload(db, q, read = getDocFromServer) {
   // The private counter is written blindly; the Rules retain the private
   // resource.lastTicket + 1 check. Its lastOrderId is NEVER read by a Student.
   const p = await payload(db, q, ref => ref.path === counterRef(db, q.vendorUid).path ? summary : read(ref));
-  p.summary = countData(q.vendorUid, c.lastTicket + 1, c.nextTicket, c.preparing);
+  p.summary = countData(q.vendorUid, c.lastTicket + 1, c.nextTicket, c.preparingCount ?? (c.preparing ? 1 : 0));
   p.beforeCount = c;
   return p;
 }
@@ -50,7 +53,7 @@ export async function submitCount(db, q) {
       if (request?.state !== state && ['pending','confirmed','cancelled'].includes(request?.state)) continue;
       const current = (await getDocFromServer(countRef(db, q.vendorUid))).data();
       if (observed && current && (current.lastTicket > observed.lastTicket ||
-        current.nextTicket !== observed.nextTicket || current.preparing !== observed.preparing)) continue;
+        current.nextTicket !== observed.nextTicket || current.preparingCount !== observed.preparingCount)) continue;
       throw error;
     }
   }
@@ -66,13 +69,15 @@ export async function advanceCount(db, expected) {
         const summary = await tx.get(countRef(db, expected.vendorUid));
         const order = saved.data(), queue = cursor.data() ?? initialQueue(), count = summary.data();
         if (order.status !== expected.status || (order.statusRevision??0) !== (expected.statusRevision??0)) throw new Error('stale-order');
-        if (!count || count.nextTicket !== queue.nextTicket || count.preparing !== (queue.preparingOrderId !== null)) throw new Error('stale-count');
+        const preparingCount = queuePreparingCount(queue);
+        if (!count || count.nextTicket !== queue.nextTicket || count.preparingCount !== preparingCount) throw new Error('stale-count');
         last = count.lastTicket;
         const next = {Pending:'Preparing',Preparing:'Ready',Ready:'Completed'}[order.status];
         if (!next) throw new Error('invalid-transition');
         progressWrites(tx, db, order, queue);
         if (next !== 'Completed') tx.set(countRef(db, order.vendorUid), countData(order.vendorUid,
-          last, queue.nextTicket + (next === 'Preparing' ? 1 : 0), next === 'Preparing'));
+          last, queue.nextTicket + (next === 'Preparing' ? 1 : 0),
+          preparingCount + (next === 'Preparing' ? 1 : next === 'Ready' ? -1 : 0)));
       }, {maxAttempts:8});
       return (await getDocFromServer(orderRef(db, expected.orderId))).data();
     } catch (error) {

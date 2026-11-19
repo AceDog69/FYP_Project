@@ -15,13 +15,13 @@ test('separate closed/ordering candidates are reproducible and retain deletion-d
   assert.equal(JSON.parse(read('firebase.stage4b.json')).firestore.rules,'pilot/firestore.stage4b.rules');
   assert.equal(JSON.parse(read('firebase.stage4b.closed.json')).firestore.rules,'pilot/firestore.stage4b.closed.rules');
 });
-test('candidate changes only reviewed counter-read/reciprocal rules and adds sanitized projection', () => {
+test('candidate adds aggregate projection while preserving checkout authorization proofs', () => {
   const source = read('firestore.rules'), candidate = stage4bRules(source);
   assert.ok(candidate.includes('countForCounter(vendorUid'));
   assert.ok(candidate.includes('countForQueue(vendorUid'));
-  for (const [start,end] of [['function validOrderProgress','function progressPath'],
-    ['function validOrder(d','function validCounter'],['function validOrderItem','function validOrder(d']]) {
-    const body = s => s.slice(s.indexOf(start),s.indexOf(end,s.indexOf(start)));
+  for (const [start,end] of [['function validOrder(d','function validCounter'],
+    ['function validOrderItem','function validOrder(d']]) {
+    const body = s => { s=normalizedRules(s); return s.slice(s.indexOf(start),s.indexOf(end,s.indexOf(start))); };
     assert.equal(body(source),body(candidate));
   }
   const counter = candidate.slice(candidate.indexOf('match /checkoutCounters'),candidate.indexOf('match /queueProgress'));

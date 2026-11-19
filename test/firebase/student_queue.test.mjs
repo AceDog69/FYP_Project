@@ -58,8 +58,8 @@ test('own Vendor can publish verified initial no-start progress; absent is disti
   const {owner,student}=await setup(1);
   assert.equal((await getDocFromServer(progressRef(student))).exists(),false);
   await assertSucceeds(bootstrap(owner));const d=await progress(student);
-  assert.equal(d.nextTicket,1);assert.equal(d.preparing,false);assert.equal(d.revision,0);
-  assert.deepEqual(Object.keys(d).sort(),['schemaVersion','vendorUid','nextTicket','preparing','revision','updatedAt'].sort());
+  assert.equal(d.nextTicket,1);assert.equal(d.preparingCount,0);assert.equal(d.revision,0);
+  assert.deepEqual(Object.keys(d).sort(),['schemaVersion','vendorUid','nextTicket','preparingCount','revision','updatedAt'].sort());
   await assertSucceeds(bootstrap(owner)); // Idempotent read/no write.
 });
 
@@ -69,17 +69,17 @@ test('one-time legacy cursor bootstrap mirrors existing authoritative progress w
   await env.withSecurityRulesDisabled(c=>deleteDoc(progressRef(c.firestore())));
   const before=(await getDocFromServer(queueRef(owner))).data();
   await assertSucceeds(bootstrap(owner));const d=await progress(student);
-  assert.equal(d.nextTicket,before.nextTicket);assert.equal(d.preparing,true);assert.equal(d.revision,before.revision);
+  assert.equal(d.nextTicket,before.nextTicket);assert.equal(d.preparingCount,1);assert.equal(d.revision,before.revision);
   assert.deepEqual(d.updatedAt,before.updatedAt);assert.deepEqual((await getDocFromServer(queueRef(owner))).data(),before);
 });
 
 test('every Start/Ready requires the exact sanitized projection atomically; Completed leaves progress unchanged',async()=>{
   const {owner,student,orders:[first,second]}=await setup();
-  let order=await advance(owner,first);assert.deepEqual((({nextTicket,preparing,revision})=>({nextTicket,preparing,revision}))(await progress(student)),
-    {nextTicket:2,preparing:true,revision:1});
-  order=await advance(owner,order);assert.equal((await progress(student)).preparing,false);
+  let order=await advance(owner,first);assert.deepEqual((({nextTicket,preparingCount,revision})=>({nextTicket,preparingCount,revision}))(await progress(student)),
+    {nextTicket:2,preparingCount:1,revision:1});
+  order=await advance(owner,order);assert.equal((await progress(student)).preparingCount,0);
   await advance(owner,second);const before=await progress(student);await advance(owner,order);
-  assert.deepEqual(await progress(student),before);assert.equal(before.nextTicket,3);assert.equal(before.preparing,true);
+  assert.deepEqual(await progress(student),before);assert.equal(before.nextTicket,3);assert.equal(before.preparingCount,1);
 });
 
 test('omitted projection cannot create or release the preparation slot',async()=>{
@@ -88,8 +88,10 @@ test('omitted projection cannot create or release the preparation slot',async()=
     const batch=writeBatch(owner),next=order.status==='Pending'?'Preparing':'Ready';
     batch.update(orderRef(owner,order.orderId),{status:next,statusRevision:(order.statusRevision??0)+1,
       statusUpdatedAt:serverTimestamp(),[next==='Preparing'?'preparingAt':'readyAt']:serverTimestamp()});
-    batch.set(queueRef(owner),{schemaVersion:1,vendorUid:'vendor',nextTicket:queue.nextTicket+(next==='Preparing'?1:0),
-      preparingOrderId:next==='Preparing'?order.orderId:null,revision:queue.revision+1,updatedAt:serverTimestamp()});
+    const starting=next==='Preparing';
+    batch.set(queueRef(owner),{schemaVersion:2,vendorUid:'vendor',nextTicket:queue.nextTicket+(starting?1:0),
+      preparingCount:queue.preparingCount+(starting?1:-1),lastTransitionOrderId:order.orderId,
+      revision:queue.revision+1,updatedAt:serverTimestamp()});
     return batch.commit();
   }
   await deny(withoutProjection(first,initialQueue()));const preparing=await advance(owner,first);
@@ -101,7 +103,7 @@ test('forged initial advancement, preparation, owner, revision and extra identit
   const {owner}=await setup(1);
   for(const values of [{nextTicket:2},{preparing:true},{revision:1},{vendorUid:'other'},
     {preparingOrderId:'secret'},{studentUid:'student'},{orderId:'secret'},{extra:true},{updatedAt:new Date(0)}]) {
-    await deny(setDoc(progressRef(owner),{schemaVersion:1,vendorUid:'vendor',nextTicket:1,preparing:false,
+    await deny(setDoc(progressRef(owner),{schemaVersion:2,vendorUid:'vendor',nextTicket:1,preparingCount:0,
       revision:0,updatedAt:serverTimestamp(),...values}));
   }
   await assertSucceeds(bootstrap(owner));
@@ -112,7 +114,7 @@ test('a paired Start cannot publish a forged ticket, false preparation flag, wro
   for(const values of [{nextTicket:3},{preparing:false},{revision:2},{vendorUid:'other'},
     {updatedAt:new Date(0)},{preparingOrderId:first.orderId},{studentUid:'student'}]) {
     await deny(raw(owner,first,initialQueue(),b=>b.set(progressRef(owner),{
-      schemaVersion:1,vendorUid:'vendor',nextTicket:2,preparing:true,revision:1,updatedAt:serverTimestamp(),...values})));
+      schemaVersion:2,vendorUid:'vendor',nextTicket:2,preparingCount:1,revision:1,updatedAt:serverTimestamp(),...values})));
   }
   await assertSucceeds(advance(owner,first));
 });
@@ -130,7 +132,7 @@ test('wrong Students, Vendors, unconfigured users and anonymous clients cannot p
   const {owner,student,orders:[first]}=await setup(1);const other=await vendor(env,'other');
   const unconfigured=await account(env,'unconfigured','vendor'),anonymous=env.unauthenticatedContext().firestore();
   for(const attacker of [student,other,unconfigured,anonymous]) await deny(setDoc(progressRef(attacker),{
-    schemaVersion:1,vendorUid:'vendor',nextTicket:1,preparing:false,revision:0,updatedAt:serverTimestamp()}));
+    schemaVersion:2,vendorUid:'vendor',nextTicket:1,preparingCount:0,revision:0,updatedAt:serverTimestamp()}));
   await advance(owner,first);
   for(const attacker of [student,other,unconfigured,anonymous]) await deny(updateDoc(progressRef(attacker),{preparing:false,revision:2,updatedAt:serverTimestamp()}));
 });
@@ -163,7 +165,7 @@ test('concurrent bootstrap and Start cannot leave an initial or stale projection
     await bootstrap(owner); // Explicit retry observes the winning projection.
   }
   const d=await progress(student),q=(await getDocFromServer(queueRef(owner))).data();
-  assert.equal(d.revision,q.revision);assert.equal(d.nextTicket,2);assert.equal(d.preparing,true);
+  assert.equal(d.revision,q.revision);assert.equal(d.nextTicket,2);assert.equal(d.preparingCount,1);
 });
 
 test('parallel Vendors cannot double-start or detach the projection; stale raw replay fails',async()=>{
@@ -181,8 +183,8 @@ test('parallel Vendors cannot double-start or detach the projection; stale raw r
     assert.equal(budgetDiagnostic.test(error.message),false);
     const d=await progress(student),q=(await getDocFromServer(queueRef(owner))).data(),order=await readOrder(owner,first);
     assert.equal(order.status,'Preparing');assert.equal(order.statusRevision,1);
-    assert.equal(q.revision,1);assert.equal(q.nextTicket,2);assert.equal(q.preparingOrderId,first.orderId);
-    assert.equal(d.revision,q.revision);assert.equal(d.nextTicket,q.nextTicket);assert.equal(d.preparing,true);
+    assert.equal(q.revision,1);assert.equal(q.nextTicket,2);assert.equal(q.preparingCount,1);
+    assert.equal(d.revision,q.revision);assert.equal(d.nextTicket,q.nextTicket);assert.equal(d.preparingCount,1);
     await deny(raw(owner,first,initialQueue()));
   }
   assert.ok(errors.every(error=>error.message==='stale-order'||error.code==='permission-denied'),
@@ -199,7 +201,7 @@ test('Ready/start contention converges to exact per-stall progress without skipp
     const error=results[1].reason;assert.ok(error.message==='ineligible-order'||error.code==='permission-denied');
     assert.equal(budgetDiagnostic.test(error.message),false);await advance(owner,second);
   }
-  const d=await progress(student);assert.equal(d.nextTicket,3);assert.equal(d.preparing,true);assert.equal(d.revision,3);
+  const d=await progress(student);assert.equal(d.nextTicket,3);assert.equal(d.preparingCount,1);assert.equal(d.revision,3);
 });
 
 test('multiple stalls retain independent numeric projections and cross-stall publication is rejected',async()=>{
@@ -218,7 +220,7 @@ test('real-time Student projection is synchronized with server-confirmed cursor 
   const stop=onSnapshot(progressRef(student),{includeMetadataChanges:true},snapshot=>{
     if(snapshot.metadata.hasPendingWrites||snapshot.metadata.fromCache||!snapshot.exists()) return;
     const d=snapshot.data();seen.push(d.revision);
-    if(Object.keys(d).length!==6||'preparingOrderId' in d||'studentUid' in d) {reject(new Error('Private fields exposed'));return;}
+    if(Object.keys(d).length!==6||'lastTransitionOrderId' in d||'studentUid' in d) {reject(new Error('Private fields exposed'));return;}
     if(d.revision===2) resolve();
   },reject);
   try {await advance(owner,await advance(owner,first));await done;assert.equal(seen.at(-1),2);}

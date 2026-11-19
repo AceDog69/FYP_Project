@@ -9,8 +9,8 @@ import 'package:my_fyp_app/widgets/stall_queue_count.dart';
 import 'support/catalog_fixtures.dart';
 import 'support/fake_catalog_repository.dart';
 
-Map<String, dynamic> data(String uid, int last, int next, bool preparing) => {
-  ...queueCountFields(uid, last, next, preparing), 'updatedAt': Timestamp.now(),
+Map<String, dynamic> data(String uid, int last, int next, int preparingCount) => {
+  ...queueCountFields(uid, last, next, preparingCount), 'updatedAt': Timestamp.now(),
 };
 class _NoNetworkFirestore implements FirebaseFirestore {
   @override
@@ -38,30 +38,32 @@ void main() {
     final repository = FirebaseOrderRepository(_NoNetworkFirestore(), () => 'student');
     expect(repository.usesPublicQueueCounts,false); expect(repository.canCheckout,false); expect(repository.canProcessOrders,false);
   });
-  test('confirmed ticket and single-slot cursor formula covers every count transition', () {
-    expect(PublicQueueCount.decode('v', data('v',0,1,false))!.count,0);
-    expect(PublicQueueCount.decode('v', data('v',1,1,false))!.count,1);
-    expect(PublicQueueCount.decode('v', data('v',3,1,false))!.count,3);
-    expect(PublicQueueCount.decode('v', data('v',3,2,true))!.count,3);
-    expect(PublicQueueCount.decode('v', data('v',3,2,false))!.count,2);
-    expect(PublicQueueCount.decode('v', data('v',3,4,false))!.count,0);
+  test('pending and parallel Preparing counts remain accurate through every cursor transition', () {
+    expect(PublicQueueCount.decode('v', data('v',0,1,0))!.count,0);
+    expect(PublicQueueCount.decode('v', data('v',1,1,0))!.count,1);
+    expect(PublicQueueCount.decode('v', data('v',3,1,0))!.count,3);
+    expect(PublicQueueCount.decode('v', data('v',3,2,1))!.count,3);
+    final parallel = PublicQueueCount.decode('v', data('v',4,3,2))!;
+    expect(parallel.count,4); expect(parallel.pendingCount,2); expect(parallel.preparingCount,2);
+    expect(PublicQueueCount.decode('v', data('v',3,2,0))!.count,2);
+    expect(PublicQueueCount.decode('v', data('v',3,4,0))!.count,0);
   });
   test('missing is unknown; mismatched vendor, count, schema, private fields or timestamps are rejected', () {
     expect(PublicQueueCount.decode('v',null),isNull);
-    final valid = data('v',1,1,false);
+    final valid = data('v',1,1,0);
     for (final bad in [<String,dynamic>{}, {...valid,'count':0}, {...valid,'count':1.0}, {...valid,'vendorUid':'other'},
       {...valid,'lastTicket':'1'}, {...valid,'lastTicket':1.0}, {...valid,'nextTicket':1.0},
-      {...valid,'schemaVersion':1.0}, {...valid,'schemaVersion':2}, {...valid,'updatedAt':'old'},
-      {...valid,'lastOrderId':'private'}, {...valid,'studentUid':'private'}, {...valid}..remove('preparing')]) {
+      {...valid,'schemaVersion':1.0}, {...valid,'schemaVersion':1}, {...valid,'updatedAt':'old'},
+      {...valid,'lastOrderId':'private'}, {...valid,'studentUid':'private'}, {...valid}..remove('preparingCount')]) {
       expect(() => PublicQueueCount.decode('v',bad),throwsFormatException);
     }
   });
   test('bounds reject impossible cursor state and preserve safe integer maximum', () {
-    for (final args in [(0,2,false),(0,1,true),(-1,1,false),(2147483648,1,false),(1,0,false)]) {
+    for (final args in [(0,2,0),(0,1,1),(-1,1,0),(2147483648,1,0),(1,0,0),(2,2,-1)]) {
       expect(() => queueCountFields('v',args.$1,args.$2,args.$3),throwsFormatException);
     }
-    expect(PublicQueueCount.decode('v',data('v',2147483647,2147483648,false))!.count,0);
-    expect(PublicQueueCount.decode('v',data('v',1,1,false),cached:true)!.cached,true);
+    expect(PublicQueueCount.decode('v',data('v',2147483647,2147483648,0))!.count,0);
+    expect(PublicQueueCount.decode('v',data('v',1,1,0),cached:true)!.cached,true);
   });
 
   Future<void> mount(WidgetTester tester, Widget screen, {Size size = const Size(412,915), double scale = 1}) async {
@@ -74,7 +76,7 @@ void main() {
     final repo = _Catalog(); populate(repo); addTearDown(repo.dispose); return repo;
   }
   testWidgets('Home shows a verified zero to a Student with no orders and leaves navigation unchanged', (tester) async {
-    final repo = catalog(); repo.counts['alpha'] = data('alpha',0,1,false); String? selected;
+    final repo = catalog(); repo.counts['alpha'] = data('alpha',0,1,0); String? selected;
     await mount(tester,StudentHome(repository:repo,onStall:(s) => selected = s.id)); await tester.pumpAndSettle();
     final card = find.byKey(const ValueKey('stall-alpha'));
     expect(find.descendant(of:card,matching:find.text('Orders in queue: 0')),findsOneWidget);
@@ -84,12 +86,12 @@ void main() {
     expect(tester.getSize(action).height,greaterThanOrEqualTo(48));
   });
   testWidgets('live independent counts change without resubscribing on search/filter rebuilds', (tester) async {
-    final repo = catalog(); repo.counts['alpha'] = data('alpha',1,1,false); repo.counts['beta'] = data('beta',4,2,false);
+    final repo = catalog(); repo.counts['alpha'] = data('alpha',1,1,0); repo.counts['beta'] = data('beta',4,2,0);
     await mount(tester,StudentHome(repository:repo,onStall:(_) {})); await tester.pumpAndSettle();
     expect(find.text('Orders in queue: 1'),findsOneWidget);
     await tester.enterText(find.byType(TextField),'Alpha'); await tester.pumpAndSettle(); expect(repo.countReadsByVendor['alpha'],1);
-    repo.counts['alpha'] = data('alpha',2,2,true); repo.emit(); await tester.pumpAndSettle(); expect(find.text('Orders in queue: 2'),findsOneWidget);
-    repo.counts['alpha'] = data('alpha',2,2,false); repo.emit(); await tester.pumpAndSettle(); expect(find.text('Orders in queue: 1'),findsOneWidget);
+    repo.counts['alpha'] = data('alpha',2,2,1); repo.emit(); await tester.pumpAndSettle(); expect(find.text('Orders in queue: 2'),findsOneWidget);
+    repo.counts['alpha'] = data('alpha',2,2,0); repo.emit(); await tester.pumpAndSettle(); expect(find.text('Orders in queue: 1'),findsOneWidget);
     await tester.tap(find.byTooltip('Clear search')); await tester.pumpAndSettle();
     await tester.ensureVisible(find.byKey(const ValueKey('home-queue-count-beta')));
     expect(find.text('Orders in queue: 3'),findsOneWidget);
@@ -99,14 +101,14 @@ void main() {
     await mount(tester,StallQueueCount(vendorUid:'alpha',repository:repo,currentStall:true));
     expect(find.text('Queue unavailable'),findsOneWidget);
     repo.countLoading = false; repo.emit(); await tester.pumpAndSettle(); expect(find.text('Queue unavailable'),findsOneWidget);
-    repo.counts['alpha'] = data('alpha',0,1,false); repo.countCached = true; repo.emit(); await tester.pumpAndSettle();
+    repo.counts['alpha'] = data('alpha',0,1,0); repo.countCached = true; repo.emit(); await tester.pumpAndSettle();
     expect(find.text('Queue unavailable'),findsOneWidget);
     repo.countCached = false; repo.emit(); await tester.pumpAndSettle(); expect(find.text('Orders in queue: 0'),findsOneWidget);
     await mount(tester,StallQueueCount(vendorUid:'alpha',repository:repo,currentStall:false)); await tester.pumpAndSettle();
     expect(find.text('Queue unavailable'),findsOneWidget);
   });
   testWidgets('malformed and denied/error aggregate produce unavailable without breaking stall browsing', (tester) async {
-    final repo = catalog(); repo.counts['alpha'] = {...data('alpha',2,1,false),'count':0};
+    final repo = catalog(); repo.counts['alpha'] = {...data('alpha',2,1,0),'count':0};
     await mount(tester,StudentHome(repository:repo,onStall:(_) {})); await tester.pumpAndSettle();
     final card = find.byKey(const ValueKey('stall-alpha'));
     expect(find.descendant(of:card,matching:find.text('Queue unavailable')),findsOneWidget);
@@ -116,7 +118,7 @@ void main() {
     expect(tester.takeException(),isNull);
   });
   testWidgets('replacing repository or stall clears retained values while next stream loads', (tester) async {
-    final first = catalog(); first.counts['alpha'] = data('alpha',2,1,false);
+    final first = catalog(); first.counts['alpha'] = data('alpha',2,1,0);
     await mount(tester,StallQueueCount(vendorUid:'alpha',repository:first,currentStall:true)); await tester.pumpAndSettle();
     expect(find.text('Orders in queue: 2'),findsOneWidget);
     final next = catalog()..countLoading = true;
@@ -126,7 +128,7 @@ void main() {
     expect(find.text('Queue unavailable'),findsOneWidget);
   });
   testWidgets('Home remains scrollable at 320x640 with large text, search and category navigation', (tester) async {
-    final repo = catalog(); repo.counts['closed'] = data('closed',2147483647,1,false); String? selected;
+    final repo = catalog(); repo.counts['closed'] = data('closed',2147483647,1,0); String? selected;
     await mount(tester,StudentHome(repository:repo,onStall:(s) => selected = s.id),size:const Size(320,640),scale:1.6);
     await tester.pumpAndSettle(); final chip = find.widgetWithText(ChoiceChip,'Chinese');
     await tester.ensureVisible(chip); await tester.tap(chip); await tester.pumpAndSettle();

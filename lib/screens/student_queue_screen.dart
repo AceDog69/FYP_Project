@@ -129,7 +129,7 @@ class _QueueCardState extends State<_QueueCard> {
           childrenPadding: const EdgeInsets.only(bottom: 12), title: const Text('How this estimate works',
             style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
           children: [Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-            if (terminal || hasEstimate) Text(estimate.message),
+            if (terminal || !hasEstimate) Text(estimate.message),
             if (!terminal && hasEstimate) ...[const SizedBox(height: 8), Text(
               'Estimate checked: ${queueTime(Timestamp.fromDate(checkedAt))}', style: Theme.of(context).textTheme.bodySmall)],
             const SizedBox(height: 8),

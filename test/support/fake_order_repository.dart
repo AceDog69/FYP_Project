@@ -45,14 +45,14 @@ class FakeOrderRepository extends OrderRepository {
   @override
   Stream<VendorQueue> queue() => _watch('queue', () => [
     VendorQueue((queues[currentUid()] ?? const VendorQueue.initial()).nextTicket,
-      queues[currentUid()]?.preparingOrderId, queues[currentUid()]?.revision ?? 0,
+      queues[currentUid()]?.preparingCount ?? 0, queues[currentUid()]?.revision ?? 0,
       cached: queueCached),
   ]).map((data) => data.items.single);
   @override
   Stream<QueueProgress> queueProgress(String vendorUid) => _watch('progress:$vendorUid', () {
     final p = publicProgress[vendorUid];
     return [p == null ? QueueProgress.unavailable(vendorUid, cached: progressCached)
-      : QueueProgress(vendorUid, p.nextTicket, p.preparing, p.revision, p.updatedAt, cached: progressCached)];
+      : QueueProgress(vendorUid, p.nextTicket, p.preparingCount, p.revision, p.updatedAt, cached: progressCached)];
   }).map((data) => data.items.single);
   @override
   Future<void> advance(ConfirmedOrder expected) async {
@@ -71,11 +71,12 @@ class FakeOrderRepository extends OrderRepository {
     final after = progressed(before);
     receipts[before.id] = OrderReceipt(after, receipt.items);
     if (after.status != 'Completed') {
-      queues[before.vendorUid] = VendorQueue(cursor.nextTicket + (after.status == 'Preparing' ? 1 : 0),
-        after.status == 'Preparing' ? before.id : null, cursor.revision + 1);
+      final starting = after.status == 'Preparing';
+      queues[before.vendorUid] = VendorQueue(cursor.nextTicket + (starting ? 1 : 0),
+        cursor.preparingCount + (starting ? 1 : -1), cursor.revision + 1);
       final queue = queues[before.vendorUid]!;
       publicProgress[before.vendorUid] = QueueProgress(before.vendorUid, queue.nextTicket,
-        queue.preparingOrderId != null, queue.revision, after.statusUpdatedAt);
+        queue.preparingCount, queue.revision, after.statusUpdatedAt);
     }
     emit();
   }

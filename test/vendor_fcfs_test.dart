@@ -52,15 +52,23 @@ void main() {
       expect(() => ConfirmedOrder.decode(pending.id, {...header(preparing), ...values}), throwsFormatException);
     }
   });
-  test('queue decoder, exact ticket eligibility, one slot and cache restrictions', () {
+  test('queue decoder preserves legacy cursors and enforces sequential starts without a slot limit', () {
     final first = receiptFor(request('1'), 1).order, second = receiptFor(request('2'), 2).order;
+    final third = receiptFor(request('3'), 3).order;
     final initial = VendorQueue.decode('vendor', null);
     expect(initial.permits(first), true); expect(initial.permits(second), false);
-    final claimed = VendorQueue(2, first.id, 1);
-    expect(claimed.permits(second), false); expect(claimed.permits(progressed(first)), true);
-    expect(const VendorQueue(2, null, 2).permits(second), true);
+    final onePreparing = VendorQueue(2, 1, 1);
+    expect(onePreparing.permits(second), true); expect(onePreparing.permits(progressed(first)), true);
+    expect(onePreparing.permits(third), false);
+    final twoPreparing = VendorQueue(3, 2, 2);
+    expect(twoPreparing.permits(third), true);
+    expect(twoPreparing.permits(progressed(first)), true); expect(twoPreparing.permits(progressed(second)), true);
+    expect(const VendorQueue(2, 0, 2).permits(second), true);
     expect(const VendorQueue.initial(cached: true).permits(first), false);
-    expect(VendorQueue(2, first.id, 1, cached: true).permits(progressed(first)), false);
+    expect(VendorQueue(2, 1, 1, cached: true).permits(progressed(first)), false);
+    final legacy = VendorQueue.decode('vendor', {'schemaVersion': 1, 'vendorUid': 'vendor',
+      'nextTicket': 2, 'preparingOrderId': first.id, 'revision': 1, 'updatedAt': Timestamp.now()});
+    expect(legacy.preparingCount, 1); expect(legacy.legacyPreparingOrderId, first.id);
     expect(() => VendorQueue.decode('vendor', {'nextTicket': 3}), throwsFormatException);
     expect(() => VendorQueue.decode('vendor', {'schemaVersion': 1, 'vendorUid': 'other',
       'nextTicket': 2, 'preparingOrderId': null, 'revision': 1, 'updatedAt': Timestamp.now()}), throwsFormatException);
@@ -88,10 +96,12 @@ void main() {
   Future<void> press(WidgetTester tester, Finder finder) async {
     await tester.ensureVisible(finder); await tester.tap(finder); await tester.pumpAndSettle();
   }
-  FakeOrderRepository fixture({bool enabled = true}) {
+  FakeOrderRepository fixture({bool enabled = true, int count = 2}) {
     final repo = FakeOrderRepository(() => 'vendor')..processingEnabled = enabled;
-    final first = receiptFor(request('1'), 1), second = receiptFor(request('2'), 2);
-    repo.receipts[second.order.id] = second; repo.receipts[first.order.id] = first;
+    for (var ticket = 1; ticket <= count; ticket++) {
+      final receipt = receiptFor(request('$ticket'), ticket);
+      repo.receipts[receipt.order.id] = receipt;
+    }
     addTearDown(repo.dispose); return repo;
   }
 
@@ -104,16 +114,40 @@ void main() {
     expect(tester.widget<FilledButton>(action(first)).onPressed, isNotNull);
     expect(tester.widget<FilledButton>(action(second)).onPressed, isNull); expect(tester.takeException(), isNull);
   });
-  testWidgets('confirmed progress releases slot, retains Ready and completes after collection', (tester) async {
+  testWidgets('ticket starts stay sequential while Preparing and Ready transitions run independently', (tester) async {
     final repo = fixture(); await mount(tester, repo);
     final first = repo.receipts[request('1').id]!.order, second = repo.receipts[request('2').id]!.order;
     await press(tester, action(first)); expect(repo.receipts[first.id]!.order.status, 'Preparing');
-    expect(tester.widget<FilledButton>(action(second)).onPressed, isNull);
-    await press(tester, action(first)); expect(repo.receipts[first.id]!.order.status, 'Ready');
     expect(tester.widget<FilledButton>(action(second)).onPressed, isNotNull);
     await press(tester, action(second)); expect(repo.receipts[second.id]!.order.status, 'Preparing');
+    final third = repo.receipts[request('3').id]?.order;
+    expect(third, isNull); // The default fixture ends at ticket 2.
+    expect(repo.queues['vendor']?.preparingCount, 2);
+    await press(tester, action(second)); expect(repo.receipts[second.id]!.order.status, 'Ready');
+    expect(repo.queues['vendor']?.preparingCount, 1);
+    await press(tester, action(first)); expect(repo.receipts[first.id]!.order.status, 'Ready');
+    expect(repo.queues['vendor']?.preparingCount, 0);
     await press(tester, action(first)); expect(repo.receipts[first.id]!.order.status, 'Completed');
-    expect(action(first), findsNothing); expect(repo.advanceCalls, 4);
+    await press(tester, action(second)); expect(repo.receipts[second.id]!.order.status, 'Completed');
+    expect(action(first), findsNothing); expect(repo.advanceCalls, 6);
+  });
+  testWidgets('ticket 3 stays blocked until ticket 2 starts, regardless of Ready order', (tester) async {
+    final repo = fixture(count: 3); await mount(tester, repo);
+    final first = repo.receipts[request('1').id]!.order;
+    final second = repo.receipts[request('2').id]!.order;
+    final third = repo.receipts[request('3').id]!.order;
+    await press(tester, action(first));
+    expect(tester.widget<FilledButton>(action(second)).onPressed, isNotNull);
+    expect(tester.widget<FilledButton>(action(third)).onPressed, isNull);
+    await press(tester, action(second));
+    expect(repo.queues['vendor']?.preparingCount, 2);
+    expect(tester.widget<FilledButton>(action(third)).onPressed, isNotNull);
+    await press(tester, action(third));
+    expect(repo.queues['vendor']?.nextTicket, 4);
+    expect(repo.queues['vendor']?.preparingCount, 3);
+    await press(tester, action(third));
+    expect(repo.receipts[third.id]!.order.status, 'Ready');
+    expect(repo.queues['vendor']?.preparingCount, 2);
   });
   testWidgets('duplicate taps remain disabled and status is unchanged until acknowledged', (tester) async {
     final repo = fixture()..pendingAdvance = Completer<void>(); await mount(tester, repo);

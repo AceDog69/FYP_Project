@@ -2,9 +2,9 @@ import { doc, getDocFromServer, runTransaction, serverTimestamp } from 'firebase
 import { orderRef } from './checkout_helpers.mjs';
 export const queueRef=(db,uid='vendor')=>doc(db,'vendorQueues',uid);
 export const progressRef=(db,uid='vendor')=>doc(db,'queueProgress',uid);
-export const progressData=(uid,queue)=>({schemaVersion:1,vendorUid:uid,nextTicket:queue.nextTicket,
-  preparing:queue.preparingOrderId!==null,revision:queue.revision,updatedAt:queue.updatedAt});
-export const initialQueue=()=>({nextTicket:1,preparingOrderId:null,revision:0});
+export const progressData=(uid,queue)=>({schemaVersion:2,vendorUid:uid,nextTicket:queue.nextTicket,
+  preparingCount:queue.preparingCount,revision:queue.revision,updatedAt:queue.updatedAt});
+export const initialQueue=()=>({schemaVersion:2,nextTicket:1,preparingCount:0,revision:0});
 export const statuses=['Pending','Preparing','Ready','Completed'];
 export function progressWrites(writer,db,order,queue) {
   const next=statuses[statuses.indexOf(order.status)+1];
@@ -12,9 +12,11 @@ export function progressWrites(writer,db,order,queue) {
     statusUpdatedAt:serverTimestamp(),
     [next==='Preparing'?'preparingAt':next==='Ready'?'readyAt':'completedAt']:serverTimestamp()});
   if(next!=='Completed') {
+    const starting=next==='Preparing';
     const after={
-    schemaVersion:1,vendorUid:order.vendorUid,nextTicket:queue.nextTicket+(next==='Preparing'?1:0),
-    preparingOrderId:next==='Preparing'?order.orderId:null,revision:queue.revision+1,updatedAt:serverTimestamp()};
+    schemaVersion:2,vendorUid:order.vendorUid,nextTicket:queue.nextTicket+(starting?1:0),
+    preparingCount:(queue.preparingCount??(queue.preparingOrderId?1:0))+(starting?1:-1),
+    revision:queue.revision+1,lastTransitionOrderId:order.orderId,updatedAt:serverTimestamp()};
     writer.set(queueRef(db,order.vendorUid),after);
     writer.set(progressRef(db,order.vendorUid),progressData(order.vendorUid,after));
   }
@@ -28,8 +30,9 @@ export async function advance(db,expected,{maxAttempts=8}={}) {
     const order=record.data(),queue=cursor.data()??initialQueue();
     if(order?.status!==expected.status||(order.statusRevision??0)!==(expected.statusRevision??0))
       throw new Error('stale-order');
-    if((order.status==='Pending'&&(queue.preparingOrderId!==null||queue.nextTicket!==order.ticket))||
-       (order.status==='Preparing'&&queue.preparingOrderId!==order.orderId)||order.status==='Completed')
+    const preparingCount=queue.preparingCount??(queue.preparingOrderId?1:0);
+    if((order.status==='Pending'&&queue.nextTicket!==order.ticket)||
+       (order.status==='Preparing'&&(!preparingCount||order.ticket>=queue.nextTicket))||order.status==='Completed')
       throw new Error('ineligible-order');
     progressWrites(tx,db,order,queue);
   },{maxAttempts});

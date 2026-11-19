@@ -142,12 +142,17 @@ void main() {
     final first = polishedReceipt('1', 1).order, second = polishedReceipt('2', 2).order;
     Finder action(String id) => find.byKey(ValueKey('advance-$id'));
     expect(tester.widget<FilledButton>(action(first.id)).onPressed, isNotNull);
+    await reveal(tester, action(second.id));
     expect(tester.widget<FilledButton>(action(second.id)).onPressed, isNull);
     expect(find.text('2 × Rice Bowl'), findsWidgets); expect(find.text('Confirmed total: RM 19.50'), findsWidgets);
     await press(tester, action(first.id)); expect(repo.receipts[first.id]!.order.status, 'Preparing');
-    expect(tester.widget<FilledButton>(action(second.id)).onPressed, isNull);
+    await reveal(tester, action(second.id));
+    expect(tester.widget<FilledButton>(action(second.id)).onPressed, isNotNull);
+    await press(tester, action(second.id)); expect(repo.receipts[second.id]!.order.status, 'Preparing');
+    await reveal(tester, action(first.id));
     await press(tester, action(first.id)); expect(repo.receipts[first.id]!.order.status, 'Ready');
-    expect(tester.widget<FilledButton>(action(second.id)).onPressed, isNotNull); expect(repo.advanceCalls, 2);
+    await reveal(tester, action(second.id));
+    expect(tester.widget<FilledButton>(action(second.id)).onPressed, isNotNull); expect(repo.advanceCalls, 3);
   });
 
   testWidgets('Vendor Orders loading, cached and error/Retry presentation never enables unsafe actions', (tester) async {
