@@ -3,6 +3,7 @@ import '../models/confirmed_order.dart';
 import '../models/vendor_queue.dart';
 import '../models/queue_progress.dart';
 import '../models/public_queue_count.dart';
+import '../models/preparation_stats.dart';
 import 'auth_repository.dart';
 
 // Separate from the accepted checkout protocol: this service never writes an
@@ -16,8 +17,11 @@ class VendorOrderProcessing {
   final String? Function() currentUid;
   final bool Function() enabled;
   bool _busy = false;
+  Future<void> _sampleQueue = Future<void>.value();
   String get _uid => currentUid() ?? (throw const AccountException('Please sign in again.'));
   DocumentReference<Map<String, dynamic>> _queue(String uid) => db.collection('vendorQueues').doc(uid);
+  DocumentReference<Map<String, dynamic>> _preparationStats(String uid) =>
+      db.collection('vendorPreparationStats').doc(uid);
 
   void _guard(String uid) {
     if (!enabled() || _uid != uid) {
@@ -90,24 +94,43 @@ class VendorOrderProcessing {
     _guard(uid);
   }
 
-  Future<void> _transition(Future<void> Function(Transaction, void Function(int)) action) async {
+  Future<void> _transition(
+    Future<void> Function(Transaction, void Function(int?, int)) action,
+  ) async {
     for (var attempt = 0; attempt < 5; attempt++) {
-      int? observed;
+      int? observedLastTicket, observedQueueRevision;
       try {
         await db.runTransaction<void>((tx) {
-          observed = null;
-          return action(tx, (last) => observed = last);
+          observedLastTicket = null;
+          observedQueueRevision = null;
+          return action(tx, (lastTicket, queueRevision) {
+            observedLastTicket = lastTicket;
+            observedQueueRevision = queueRevision;
+          });
         }, maxAttempts: 8);
         return;
       } on FirebaseException catch (error) {
-        if (!publicQueueCounts() || error.code != 'permission-denied' || observed == null || attempt == 4) rethrow;
+        final observedRevision = observedQueueRevision;
+        if (error.code != 'permission-denied' || observedRevision == null || attempt == 4) rethrow;
         final uid = _uid;
         _guard(uid);
-        final current = await db.collection('stallQueueCounts').doc(uid).get(const GetOptions(source: Source.server));
+        final cursor = await _queue(uid).get(const GetOptions(source: Source.server));
         _guard(uid);
-        final count = PublicQueueCount.decode(uid, current.data());
-        if (current.metadata.hasPendingWrites || count == null || count.lastTicket <= observed!) rethrow;
-        // Retry only after observing a confirmed concurrent checkout.
+        if (cursor.metadata.hasPendingWrites || !cursor.exists) rethrow;
+        final currentQueue = VendorQueue.decode(uid, cursor.data());
+        var advanced = currentQueue.revision > observedRevision;
+        if (publicQueueCounts() && observedLastTicket != null) {
+          final current = await db.collection('stallQueueCounts').doc(uid)
+              .get(const GetOptions(source: Source.server));
+          _guard(uid);
+          final count = PublicQueueCount.decode(uid, current.data());
+          advanced = advanced || (!current.metadata.hasPendingWrites && count != null &&
+              count.lastTicket > observedLastTicket!);
+        }
+        if (!advanced) rethrow;
+        // The server cursor (or enabled ticket mirror) proves another operation
+        // committed since this transaction read it. Retry the full guarded
+        // transaction against fresh state; stale orders still fail its checks.
       }
     }
   }
@@ -140,6 +163,103 @@ class VendorOrderProcessing {
     _guard(uid);
   }
 
+  /// Catch-up is serialized and bounded to one document transaction per order.
+  /// Its per-order marker makes retries and duplicate snapshots idempotent.
+  void recordReadySamples(Iterable<ConfirmedOrder> orders) {
+    final uid = _uid;
+    if (!enabled()) {
+      return;
+    }
+    final candidates = List<ConfirmedOrder>.of(orders);
+    _sampleQueue = _sampleQueue.then((_) async {
+      for (final order in candidates) {
+        if (order.vendorUid != uid || order.preparationSampleRecorded ||
+            (order.status != 'Ready' && order.status != 'Completed')) {
+          continue;
+        }
+        try {
+          await recordPreparationSample(order);
+        } on Object {
+          break;
+        }
+      }
+    });
+  }
+
+  Future<void> recordPreparationSample(ConfirmedOrder expected) async {
+    final uid = _uid;
+    _guard(uid);
+    if (expected.vendorUid != uid) {
+      throw const AccountException('This order belongs to another Vendor.');
+    }
+    final orderRef = db.collection('orders').doc(expected.id);
+    final statsRef = _preparationStats(uid);
+    for (var attempt = 0; attempt < 5; attempt++) {
+      int? observedSampleCount;
+      try {
+        await db.runTransaction<void>((tx) async {
+          _guard(uid);
+          final saved = await tx.get(orderRef);
+          if (!saved.exists) {
+            throw const AccountException('Order no longer exists.');
+          }
+          final order = ConfirmedOrder.decode(saved.id, saved.data()!);
+          if (order.vendorUid != uid || (order.status != 'Ready' && order.status != 'Completed')) {
+            throw const AccountException('Only a Ready order can contribute a preparation sample.');
+          }
+          if (order.preparationSampleRecorded) return;
+          final started = order.preparingAt?.toDate().millisecondsSinceEpoch;
+          final ready = order.readyAt?.toDate().millisecondsSinceEpoch;
+          final duration = started == null || ready == null ? -1 : ready - started;
+          PreparationStats? stats;
+          if (PreparationStats.isValidDuration(duration)) {
+            final snapshot = await tx.get(statsRef);
+            try {
+              stats = snapshot.exists ? PreparationStats.decode(uid, snapshot.data()) : null;
+            } on FormatException {
+              throw const AccountException('Preparation history is malformed; no sample was changed.');
+            }
+            observedSampleCount = stats?.sampleCount ?? 0;
+          }
+          _guard(uid);
+          if (PreparationStats.isValidDuration(duration)) {
+            tx.set(statsRef, stats == null
+                ? PreparationStats.firstSample(uid, order.id, duration)
+                : stats.withSample(uid, order.id, duration));
+          }
+          tx.update(orderRef, {'preparationSampleRecorded': true});
+        }, maxAttempts: 8);
+        break;
+      } on FirebaseException catch (error) {
+        final observed = observedSampleCount;
+        if (error.code != 'permission-denied' || observed == null || attempt == 4) {
+          rethrow;
+        }
+        // The emulator may report a transaction conflict as permission-denied.
+        // Retry only after server reads prove another valid sample advanced the
+        // shared aggregate, or the same order was already recorded.
+        final currentOrder = await orderRef.get(const GetOptions(source: Source.server));
+        _guard(uid);
+        if (currentOrder.data()?['preparationSampleRecorded'] == true) break;
+        final currentStats = await statsRef.get(const GetOptions(source: Source.server));
+        _guard(uid);
+        if (!currentStats.exists) rethrow;
+        try {
+          if (PreparationStats.decode(uid, currentStats.data()).sampleCount <= observed) rethrow;
+        } on FormatException {
+          throw const AccountException('Preparation history is malformed; no sample was changed.');
+        }
+      }
+    }
+    _guard(uid);
+    final confirmed = await orderRef.get(const GetOptions(source: Source.server));
+    final current = confirmed.data();
+    if (_uid != uid || confirmed.metadata.hasPendingWrites || current == null ||
+        current['preparationSampleRecorded'] != true) {
+      throw const AccountException('Preparation history acknowledgement is unavailable; retry when connected.');
+    }
+  }
+
   Future<void> advance(ConfirmedOrder expected) async {
     final uid = _uid;
     _guard(uid);
@@ -149,6 +269,9 @@ class VendorOrderProcessing {
     }
     _busy = true;
     try {
+      if (expected.status == 'Ready' && !expected.preparationSampleRecorded) {
+        await recordPreparationSample(expected);
+      }
       if (publicQueueCounts()) await initializeQueueCount();
       final ref = db.collection('orders').doc(expected.id), queueRef = _queue(uid);
       await _transition((tx, observe) async {
@@ -158,13 +281,23 @@ class VendorOrderProcessing {
         if (!saved.exists) throw const AccountException('Order no longer exists. Refresh the inbox.');
         final order = ConfirmedOrder.decode(saved.id, saved.data()!);
         final queue = VendorQueue.decode(uid, cursor.data());
+        final starting = order.status == 'Pending';
+        final statsSnapshot = starting ? await tx.get(_preparationStats(uid)) : null;
+        PreparationStats? stats;
+        if (statsSnapshot?.exists == true) {
+          try {
+            stats = PreparationStats.decode(uid, statsSnapshot!.data());
+          } on FormatException {
+            throw const AccountException('Preparation history is malformed; Pending tickets cannot start safely.');
+          }
+        }
         final summary = publicQueueCounts() ? await tx.get(db.collection('stallQueueCounts').doc(uid)) : null;
         final count = PublicQueueCount.decode(uid, summary?.data());
         if (publicQueueCounts() && (count == null || count.nextTicket != queue.nextTicket ||
             count.preparingCount != queue.preparingCount)) {
           throw const AccountException('Queue counts could not be verified. Refresh Orders.');
         }
-        if (count != null) observe(count.lastTicket);
+        observe(count?.lastTicket, queue.revision);
         if (order.vendorUid != uid || order.status != expected.status || order.statusRevision != expected.statusRevision) {
           throw const AccountException('This order changed on another device. Review its current status before retrying.');
         }
@@ -182,8 +315,15 @@ class VendorOrderProcessing {
         final timestampField = switch (next) {
           'Preparing' => 'preparingAt', 'Ready' => 'readyAt', _ => 'completedAt',
         };
-        tx.update(ref, {'status': next, 'statusRevision': order.statusRevision + 1,
-          'statusUpdatedAt': FieldValue.serverTimestamp(), timestampField: FieldValue.serverTimestamp()});
+        final orderUpdate = <String, dynamic>{'status': next, 'statusRevision': order.statusRevision + 1,
+          'statusUpdatedAt': FieldValue.serverTimestamp(), timestampField: FieldValue.serverTimestamp()};
+        if (next == 'Preparing') {
+          orderUpdate['preparationEstimateMillis'] = PreparationStats.estimateMillis(
+            initialPreparationMinutes: order.preparationMinutes, history: stats);
+        } else if (next == 'Ready') {
+          orderUpdate['preparationSampleRecorded'] = false;
+        }
+        tx.update(ref, orderUpdate);
         if (next != 'Completed') {
           final starting = next == 'Preparing';
           final nextTicket = queue.nextTicket + (starting ? 1 : 0);
@@ -212,6 +352,9 @@ class VendorOrderProcessing {
       if (confirmed.metadata.hasPendingWrites || current == null ||
           (current['statusRevision'] as int? ?? 0) < expected.statusRevision + 1) {
         throw const AccountException('Update acknowledgement is unavailable. Refresh and review the server status.');
+      }
+      if (current['status'] == 'Ready' && current['preparationSampleRecorded'] != true) {
+        await recordPreparationSample(ConfirmedOrder.decode(ref.id, current));
       }
     } finally {
       _busy = false;

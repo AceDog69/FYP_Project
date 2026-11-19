@@ -3,10 +3,11 @@ import { randomBytes } from 'node:crypto';
 import { test, before, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { initializeTestEnvironment, assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
-import { doc, getDocFromServer, setDoc, updateDoc, deleteDoc, writeBatch, serverTimestamp,
-  onSnapshot, disableNetwork } from 'firebase/firestore';
+import { collection, doc, getDocFromServer, getDocs, setDoc, updateDoc, deleteDoc, writeBatch, serverTimestamp,
+  onSnapshot, disableNetwork, Timestamp } from 'firebase/firestore';
 import { account, vendor, draft, prepare, submit, orderRef, counterRef, requestRef } from './checkout_helpers.mjs';
-import { queueRef, progressRef, progressData, initialQueue, progressWrites, advance } from './fcfs_helpers.mjs';
+import { queueRef, progressRef, progressData, initialQueue, progressWrites, advance,
+  preparationStatsRef, recordPreparationSample } from './fcfs_helpers.mjs';
 import { checkoutTransport, expectedOfflineRejection, boundedOfflineCleanup } from './checkout_transport.mjs';
 import { budgetDiagnostic } from './checkout_budget.mjs';
 
@@ -45,6 +46,12 @@ async function setup(count=2,foods=2) {
   return {owner,student,orders};
 }
 const read=(db,order)=>getDocFromServer(orderRef(db,order.orderId)).then(s=>s.data());
+async function fixtureReadyAfter(owner,order,durationMillis) {
+  const preparing=await read(owner,order),readyAt=Timestamp.fromMillis(preparing.preparingAt.toMillis()+durationMillis);
+  await env.withSecurityRulesDisabled(async context=>updateDoc(orderRef(context.firestore(),order.orderId),{
+    status:'Ready',statusRevision:2,statusUpdatedAt:readyAt,readyAt,preparationSampleRecorded:false}));
+  return read(owner,order);
+}
 async function raw(db,order,queue,mutate=()=>{}) {
   const batch=writeBatch(db);progressWrites(batch,db,order,queue);mutate(batch);return batch.commit();
 }
@@ -58,7 +65,8 @@ test('own Vendor progresses legacy Pending through all four states with exact im
   for(const [index,status] of ['Preparing','Ready','Completed'].entries()) {
     order=await assertSucceeds(advance(owner,order));assert.equal(order.status,status);assert.equal(order.statusRevision,index+1);
     assert.ok(order.statusUpdatedAt.toMillis()>=order.createdAt.toMillis());
-    const immutable={...order};for(const key of ['status','statusRevision','statusUpdatedAt','preparingAt','readyAt','completedAt']) delete immutable[key];
+    const immutable={...order};for(const key of ['status','statusRevision','statusUpdatedAt','preparingAt','readyAt','completedAt',
+      'preparationEstimateMillis','preparationSampleRecorded']) delete immutable[key];
     const original={...pending};delete original.status;assert.deepEqual(immutable,original);
     assert.equal((await read(student,pending)).status,status);
   }
@@ -66,6 +74,83 @@ test('own Vendor progresses legacy Pending through all four states with exact im
   assert.equal((await getDocFromServer(doc(owner,'orders',id,'items','1'))).data().quantity,2);
   assert.equal((await getDocFromServer(counterRef(owner))).data().lastTicket,1);
   assert.equal((await getDocFromServer(requestRef(student,'student',id))).data().state,'confirmed');
+});
+
+test('initial allowance falls back, historical average is per stall, and each start keeps its snapshot',async()=>{
+  const {owner,student,orders:[first,second,third]}=await setup(3);
+  let preparing=await advance(owner,first);
+  assert.equal(preparing.preparationEstimateMillis,preparing.preparationMinutes*60000);
+  const ready=await fixtureReadyAfter(owner,preparing,6000);await recordPreparationSample(owner,ready);
+  const otherOwner=await vendor(env,'other'),otherRequest=await draft(student,'student','other',1);
+  await prepare(student,otherRequest);
+  const otherFirst=await assertSucceeds(submit(student,'student',otherRequest.submissionId));
+  const otherStart=await advance(otherOwner,otherFirst);
+  assert.equal(otherStart.preparationEstimateMillis,otherStart.preparationMinutes*60000);
+  const otherReady=await fixtureReadyAfter(otherOwner,otherStart,30000);await recordPreparationSample(otherOwner,otherReady);
+  const otherNextRequest=await draft(student,'student','other',1);
+  await prepare(student,otherNextRequest);
+  const otherNext=await assertSucceeds(submit(student,'student',otherNextRequest.submissionId));
+  assert.equal((await advance(otherOwner,otherNext)).preparationEstimateMillis,30000);
+  let secondStart=await advance(owner,second);assert.equal(secondStart.preparationEstimateMillis,6000);
+  let thirdStart=await advance(owner,third);assert.equal(thirdStart.preparationEstimateMillis,6000);
+  const secondReady=await fixtureReadyAfter(owner,secondStart,18000);await recordPreparationSample(owner,secondReady);
+  const stats=(await getDocFromServer(preparationStatsRef(owner))).data();
+  assert.equal(stats.sampleCount,2);assert.equal(stats.totalDurationMillis,24000);
+  assert.equal(Math.ceil(stats.totalDurationMillis/stats.sampleCount),12000);
+  thirdStart=await read(owner,third);assert.equal(thirdStart.preparationEstimateMillis,6000);
+});
+
+test('concurrent Ready samples and duplicate retries increment history exactly once',async()=>{
+  const {owner,orders:[first,second]}=await setup(2);
+  const firstStart=await advance(owner,first),secondStart=await advance(owner,second);
+  const firstReady=await fixtureReadyAfter(owner,firstStart,5000),secondReady=await fixtureReadyAfter(owner,secondStart,7000);
+  await Promise.all([recordPreparationSample(owner,firstReady),recordPreparationSample(owner,secondReady),
+    recordPreparationSample(owner,firstReady),recordPreparationSample(owner,secondReady)]);
+  const stats=(await getDocFromServer(preparationStatsRef(owner))).data();
+  assert.equal(stats.sampleCount,2);assert.equal(stats.totalDurationMillis,12000);assert.equal(stats.revision,2);
+  assert.equal((await read(owner,first)).preparationSampleRecorded,true);
+  assert.equal((await read(owner,second)).preparationSampleRecorded,true);
+});
+
+test('parallel Preparing tickets can transition to Ready concurrently without losing queue releases',async()=>{
+  const {owner,orders:[first,second]}=await setup(2);
+  const firstPreparing=await advance(owner,first),secondPreparing=await advance(owner,second);
+  await new Promise(resolve=>setTimeout(resolve,1100));
+  const settled=await Promise.allSettled([advance(owner,firstPreparing),advance(owner,secondPreparing)]);
+  const failures=settled.filter(result=>result.status==='rejected').map(result=>result.reason);
+  assert.equal(failures.length,0,failures.map(error=>`${error.name} ${error.code??''}: ${error.message}`).join('\n'));
+  const ready=settled.map(result=>result.value);
+  assert.deepEqual(ready.map(order=>order.status),['Ready','Ready']);
+  const cursor=(await getDocFromServer(queueRef(owner))).data();
+  assert.equal(cursor.nextTicket,3);assert.equal(cursor.preparingCount,0);
+  const stats=(await getDocFromServer(preparationStatsRef(owner))).data();
+  assert.equal(stats.sampleCount,2);assert.equal(stats.revision,2);
+  assert.equal((await read(owner,first)).preparationSampleRecorded,true);
+  assert.equal((await read(owner,second)).preparationSampleRecorded,true);
+});
+
+test('implausible preparation durations are finalized once but never enter the historical average',async()=>{
+  const {owner,orders:[first,second]}=await setup(2);
+  const firstStart=await advance(owner,first),secondStart=await advance(owner,second);
+  const tooShort=await fixtureReadyAfter(owner,firstStart,500);
+  const tooLong=await fixtureReadyAfter(owner,secondStart,12*60*60*1000+1);
+  await recordPreparationSample(owner,tooShort);await recordPreparationSample(owner,tooLong);
+  assert.equal((await read(owner,first)).preparationSampleRecorded,true);
+  assert.equal((await read(owner,second)).preparationSampleRecorded,true);
+  assert.equal((await getDocFromServer(preparationStatsRef(owner))).exists(),false);
+});
+
+test('historical preparation statistics are private and cannot be client-forged',async()=>{
+  const {owner,student,orders:[first]}=await setup(1);
+  const preparing=await advance(owner,first),ready=await fixtureReadyAfter(owner,preparing,5000);
+  await deny(updateDoc(orderRef(owner,first.orderId),{preparationSampleRecorded:true}));
+  await recordPreparationSample(owner,ready);
+  const ref=preparationStatsRef(owner),wrong=await vendor(env,'other');
+  assert.equal((await getDocFromServer(ref)).data().sampleCount,1);
+  await deny(getDocFromServer(preparationStatsRef(student)));
+  await deny(getDocFromServer(preparationStatsRef(wrong,'vendor')));
+  await deny(getDocs(collection(student,'vendorPreparationStats')));
+  await deny(updateDoc(ref,{sampleCount:0,totalDurationMillis:1}));
 });
 
 test('direct owning Vendor batch is allowed only for the exact paired transition',async()=>{
@@ -169,6 +254,7 @@ test('every immutable header field and item snapshot survives attempted forgery 
   const attacks=[{studentUid:'vendor'},{vendorUid:'other'},{ticket:2},{createdAt:new Date(0)},
     {firstItem:{...first.firstItem,priceSen:1}},{totalSen:1},{itemCount:1},
     {paymentStatus:'paid'},{paymentMethod:'card'},{stallName:'Forged'},{preparationMinutes:1},
+    {preparationEstimateMillis:1000},{preparationSampleRecorded:true},
     {schemaVersion:2},{orderId:'forged'},{submissionId:'forged'},{extra:true}];
   for(const values of attacks) await deny(raw(owner,first,initialQueue(),b=>b.update(orderRef(owner,first.orderId),values)));
   await deny(raw(owner,first,initialQueue(),b=>b.update(doc(owner,'orders',first.orderId,'items','1'),{quantity:20})));

@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'confirmed_order.dart';
+import 'preparation_stats.dart';
 
 /// Sanitized per-stall progress. An absent document is UNKNOWN, never zero.
 class QueueProgress {
@@ -40,9 +41,8 @@ class QueueEstimate {
   final bool overdue;
 }
 
-/// Estimates time until Ready without using a historical average. A Pending
-/// order has a valid position among tickets not yet started, but no defensible
-/// ETA once already-started orders can proceed in parallel.
+/// Pending has an exact sequence position but no numerical ETA while earlier
+/// work may be prepared in parallel. Preparing uses its frozen order estimate.
 QueueEstimate estimateQueue(ConfirmedOrder order, QueueProgress? progress, DateTime asOf) {
   if (order.status == 'Ready' || order.status == 'Completed') {
     return QueueEstimate(ahead: 0, message: order.status == 'Ready'
@@ -60,16 +60,18 @@ QueueEstimate estimateQueue(ConfirmedOrder order, QueueProgress? progress, DateT
       return const QueueEstimate(message: 'Synchronizing order status and queue progress…');
     }
     return QueueEstimate(ahead: order.ticket - next,
-      message: 'Waiting-time estimate unavailable while orders are prepared in parallel. Your ticket remains in the Pending sequence.');
+      message: 'Waiting for preparation to begin.');
   }
   if (order.status != 'Preparing' || progress.preparingCount == 0 || next <= order.ticket || order.preparingAt == null) {
     return const QueueEstimate(message: 'Synchronizing order status and queue progress…');
   }
   final elapsed = asOf.difference(order.preparingAt!.toDate()).inMilliseconds;
-  final remaining = order.preparationMinutes * 60000 - (elapsed < 0 ? 0 : elapsed);
+  final baseline = order.preparationEstimateMillis ??
+      PreparationStats.estimateMillis(initialPreparationMinutes: order.preparationMinutes);
+  final remaining = baseline - (elapsed < 0 ? 0 : elapsed);
   if (remaining <= 0) {
     return const QueueEstimate(ahead: 0, overdue: true,
-      message: 'Preparation is taking longer than the initial estimate. Ready time is currently unknown.');
+      message: 'The preparation estimate has elapsed. Ready time is currently unknown.');
   }
   return QueueEstimate(ahead: 0, minutes: (remaining + 59999) ~/ 60000,
     message: 'Approximate time until Ready, checked on this update using the device clock. It is not a countdown or guaranteed completion time.');

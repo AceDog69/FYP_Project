@@ -67,95 +67,231 @@ service cloud.firestore {
     // Closed until the bounded checkout proof is executed and reviewed.
     function checkoutWritesEnabled() { return true; }
     function orderPath(id) { return /databases/$(database)/documents/orders/$(id); }
-    // The only preparation slot and the next never-started ticket. Tickets are
-    // allocated contiguously by the unchanged Stage 2C checkout protocol.
+    // A bounded cursor tracks the next start and aggregate active count.
     function queuePath(uid) { return /databases/$(database)/documents/vendorQueues/$(uid); }
     function queueBefore(uid) {
       return exists(queuePath(uid)) ? get(queuePath(uid)).data
-        : {'nextTicket': 1, 'preparingOrderId': null, 'revision': 0};
+        : {'schemaVersion': 2, 'vendorUid': uid, 'nextTicket': 1, 'preparingCount': 0, 'revision': 0};
     }
-    function validQueue(d, uid) {
+    function validLegacyQueue(d, uid) {
       return d.keys().hasAll(['schemaVersion','vendorUid','nextTicket','preparingOrderId','revision','updatedAt'])
         && d.keys().hasOnly(['schemaVersion','vendorUid','nextTicket','preparingOrderId','revision','updatedAt'])
         && d.schemaVersion == 1 && d.vendorUid == uid
         && d.nextTicket is int && d.nextTicket >= 2 && d.nextTicket <= 2147483648
-        && d.revision is int && d.revision >= 1 && d.updatedAt == request.time
+        && d.revision is int && d.revision >= 1 && d.updatedAt is timestamp
         && (d.preparingOrderId == null
-          || (d.preparingOrderId is string && d.preparingOrderId.matches('^[A-Za-z0-9]{20}$')));
+          || (d.preparingOrderId is string && d.preparingOrderId.matches('^[A-Za-z0-9]{20}$')))
+        && d.revision == 2 * (d.nextTicket - 1) - (d.preparingOrderId != null ? 1 : 0);
+    }
+    function queueShape(d, uid) {
+      return d.keys().hasAll(['schemaVersion','vendorUid','nextTicket','preparingCount','revision','lastTransitionOrderId','updatedAt'])
+        && d.keys().hasOnly(['schemaVersion','vendorUid','nextTicket','preparingCount','revision','lastTransitionOrderId','updatedAt'])
+        && d.schemaVersion == 2 && d.vendorUid == uid
+        && d.nextTicket is int && d.nextTicket >= 2 && d.nextTicket <= 2147483648
+        && d.preparingCount is int && d.preparingCount >= 0 && d.preparingCount <= d.nextTicket - 1
+        && d.revision is int && d.revision >= 1 && d.revision == 2 * (d.nextTicket - 1) - d.preparingCount
+        && d.lastTransitionOrderId is string && d.lastTransitionOrderId.matches('^[A-Za-z0-9]{20}$')
+        && d.updatedAt is timestamp;
+    }
+    function validQueue(d, uid) { return queueShape(d, uid) && d.updatedAt == request.time; }
+    function queueBeforeValid(uid, before) {
+      return !exists(queuePath(uid)) || (before.schemaVersion == 1
+        ? validLegacyQueue(before, uid) : queueShape(before, uid));
+    }
+    function queueBeforePreparing(before) {
+      return before.schemaVersion == 1
+        ? (before.preparingOrderId != null ? 1 : 0) : before.preparingCount;
+    }
+    function legacyActiveOrderValid(uid, before) {
+      return before.schemaVersion != 1 || before.preparingOrderId == null
+        || (get(orderPath(before.preparingOrderId)).data.vendorUid == uid
+          && get(orderPath(before.preparingOrderId)).data.status == 'Preparing'
+          && get(orderPath(before.preparingOrderId)).data.ticket == before.nextTicket - 1);
     }
     function queueClaim(uid, id, ticket) {
       let before = queueBefore(uid);
       let after = getAfter(queuePath(uid)).data;
-      return before.preparingOrderId == null && before.nextTicket == ticket
-        && validQueue(after, uid) && after.preparingOrderId == id
-        && after.nextTicket == before.nextTicket + 1 && after.revision == before.revision + 1;
+      return queueBeforeValid(uid, before) && legacyActiveOrderValid(uid, before)
+        && before.nextTicket == ticket && validQueue(after, uid)
+        && after.lastTransitionOrderId == id && after.nextTicket == before.nextTicket + 1
+        && after.preparingCount == queueBeforePreparing(before) + 1
+        && after.revision == before.revision + 1
+        && getAfter(orderPath(id)).data.status == 'Preparing';
     }
-    function queueRelease(uid, id) {
-      let before = get(queuePath(uid)).data;
+    function queueRelease(uid, id, ticket) {
+      let before = queueBefore(uid);
       let after = getAfter(queuePath(uid)).data;
-      return before.preparingOrderId == id && validQueue(after, uid)
-        && after.preparingOrderId == null && after.nextTicket == before.nextTicket
-        && after.revision == before.revision + 1;
-    }
-    // Reciprocal link: a cursor write cannot be made without the corresponding
-    // real order transition in the SAME atomic commit (get vs getAfter).
-    function pairedQueueOrder(uid, id, from, to) {
-      let before = get(orderPath(id)).data;
-      let after = getAfter(orderPath(id)).data;
-      return before.vendorUid == uid && before.status == from && after.status == to;
+      return queueBeforeValid(uid, before) && legacyActiveOrderValid(uid, before)
+        && ticket < before.nextTicket && queueBeforePreparing(before) > 0
+        && validQueue(after, uid) && after.lastTransitionOrderId == id
+        && after.nextTicket == before.nextTicket
+        && after.preparingCount == queueBeforePreparing(before) - 1
+        && after.revision == before.revision + 1
+        && getAfter(orderPath(id)).data.status == 'Ready';
     }
     function validQueueWrite(d, uid) {
       let before = queueBefore(uid);
-      // Compare the write directly; avoid re-reading this same cursor through
-      // queueClaim/queueRelease inside its own rule. The order rule still calls
-      // those reciprocal validators, preserving the Stage 3A invariant.
-      return validQueue(d, uid) && d.revision == before.revision + 1
-        && (before.preparingOrderId == null
-          ? (d.preparingOrderId is string && d.nextTicket == before.nextTicket + 1
-            && get(orderPath(d.preparingOrderId)).data.ticket == before.nextTicket
-            && pairedQueueOrder(uid, d.preparingOrderId, 'Pending', 'Preparing'))
-          : (d.preparingOrderId == null && d.nextTicket == before.nextTicket
-            && pairedQueueOrder(uid, before.preparingOrderId, 'Preparing', 'Ready')));
+      let orderBefore = get(orderPath(d.lastTransitionOrderId)).data;
+      let orderAfter = getAfter(orderPath(d.lastTransitionOrderId)).data;
+      let starts = orderBefore.status == 'Pending' && orderAfter.status == 'Preparing'
+        && orderAfter.ticket == before.nextTicket && d.nextTicket == before.nextTicket + 1
+        && d.preparingCount == queueBeforePreparing(before) + 1;
+      let readies = orderBefore.status == 'Preparing' && orderAfter.status == 'Ready'
+        && orderBefore.ticket < before.nextTicket && d.nextTicket == before.nextTicket
+        && queueBeforePreparing(before) > 0 && d.preparingCount == queueBeforePreparing(before) - 1;
+      return queueBeforeValid(uid, before) && legacyActiveOrderValid(uid, before)
+        && validQueue(d, uid) && d.revision == before.revision + 1
+        && orderBefore.vendorUid == uid && orderAfter.vendorUid == uid && (starts || readies);
+    }
+    function preparationStatsPath(uid) {
+      return /databases/$(database)/documents/vendorPreparationStats/$(uid);
+    }
+    function preparationStatsShape(d, uid) {
+      return d.keys().hasAll(['schemaVersion','vendorUid','sampleCount','totalDurationMillis','revision','lastOrderId','updatedAt'])
+        && d.keys().hasOnly(['schemaVersion','vendorUid','sampleCount','totalDurationMillis','revision','lastOrderId','updatedAt'])
+        && d.schemaVersion == 1 && d.vendorUid == uid
+        && d.sampleCount is int && d.sampleCount >= 1 && d.sampleCount <= 2147483647
+        && d.totalDurationMillis is int
+        && d.totalDurationMillis >= d.sampleCount * 1000
+        && d.totalDurationMillis <= d.sampleCount * 43200000
+        && d.revision is int && d.revision == d.sampleCount
+        && d.lastOrderId is string && d.lastOrderId.matches('^[A-Za-z0-9]{20}$')
+        && d.updatedAt is timestamp;
+    }
+    function validPreparationEstimate(d, before) {
+      let path = preparationStatsPath(before.vendorUid);
+      let estimate = d.get('preparationEstimateMillis', null);
+      return estimate is int
+        && estimate >= 1000 && estimate <= 43200000
+        && (exists(path)
+          ? (preparationStatsShape(get(path).data, before.vendorUid)
+            && estimate * get(path).data.sampleCount >= get(path).data.totalDurationMillis
+            && (estimate - 1) * get(path).data.sampleCount < get(path).data.totalDurationMillis)
+          : estimate == before.preparationMinutes * 60000);
+    }
+    function preparationDuration(before) {
+      let started = before.get('preparingAt', null);
+      let ready = before.get('readyAt', null);
+      return started is timestamp && ready is timestamp
+        ? ready.toMillis() - started.toMillis() : -1;
+    }
+    function validStatsSampleEvent(d, uid) {
+      let id = d.get('lastOrderId', '');
+      let before = get(orderPath(id)).data;
+      let after = getAfter(orderPath(id)).data;
+      return before == null || after == null ? false : validStatsSamplePair(before, after, uid);
+    }
+    function validStatsSamplePair(before, after, uid) {
+      let sampleMillis = preparationDuration(before);
+      return before.get('vendorUid', null) == uid && after.get('vendorUid', null) == uid
+        && before.get('status', null) in ['Ready','Completed'] && after.get('status', null) == before.get('status', null)
+        && before.get('preparationSampleRecorded', false) == false
+        && after.get('preparationSampleRecorded', false) == true
+        && after.diff(before).affectedKeys().hasOnly(['preparationSampleRecorded'])
+        && sampleMillis >= 1000 && sampleMillis <= 43200000;
+    }
+    function validPreparationStatsCreate(d, uid) {
+      let id = d.get('lastOrderId', '');
+      let order = get(orderPath(id)).data;
+      let sampleMillis = order == null ? -1 : preparationDuration(order);
+      return preparationStatsShape(d, uid) && d.updatedAt == request.time
+        && validStatsSampleEvent(d, uid) && d.sampleCount == 1
+        && d.revision == 1 && d.totalDurationMillis == sampleMillis;
+    }
+    function validPreparationStatsUpdate(d, uid) {
+      let id = d.get('lastOrderId', '');
+      let order = get(orderPath(id)).data;
+      let sampleMillis = order == null ? -1 : preparationDuration(order);
+      return preparationStatsShape(resource.data, uid) && preparationStatsShape(d, uid)
+        && validStatsSampleEvent(d, uid) && d.updatedAt == request.time
+        && resource.data.sampleCount < 2147483647
+        && d.sampleCount == resource.data.sampleCount + 1
+        && d.revision == resource.data.revision + 1
+        && d.totalDurationMillis == resource.data.totalDurationMillis + sampleMillis
+        && d.lastOrderId != resource.data.lastOrderId;
+    }
+    function preparationStatsUnchanged(uid) {
+      let path = preparationStatsPath(uid);
+      return exists(path) == existsAfter(path)
+        && (!exists(path) || get(path).data == getAfter(path).data);
+    }
+    function preparationStatsIncludeSample(uid, id, sampleMillis) {
+      let path = preparationStatsPath(uid);
+      let old = exists(path) ? get(path).data : null;
+      let fresh = getAfter(path).data;
+      return existsAfter(path) && preparationStatsShape(fresh, uid)
+        && fresh.updatedAt == request.time && fresh.lastOrderId == id
+        && (exists(path)
+          ? (preparationStatsShape(old, uid) && old.sampleCount < 2147483647
+            && fresh.sampleCount == old.sampleCount + 1 && fresh.revision == old.revision + 1
+            && fresh.totalDurationMillis == old.totalDurationMillis + sampleMillis)
+          : (fresh.sampleCount == 1 && fresh.revision == 1 && fresh.totalDurationMillis == sampleMillis));
+    }
+    function validPreparationSampleMarker(d, before, uid) {
+      let sampleMillis = preparationDuration(before);
+      return d.diff(before).affectedKeys().hasOnly(['preparationSampleRecorded'])
+        && before.get('status', null) in ['Ready','Completed'] && d.get('status', null) == before.get('status', null)
+        && before.get('preparationSampleRecorded', false) == false
+        && d.get('preparationSampleRecorded', false) == true
+        && (sampleMillis >= 1000 && sampleMillis <= 43200000
+          ? preparationStatsIncludeSample(uid, before.orderId, sampleMillis)
+          : preparationStatsUnchanged(uid));
     }
     function validOrderProgress(d, before, id) {
-      return d.diff(before).affectedKeys().hasOnly([
-          'status','statusRevision','statusUpdatedAt','preparingAt','readyAt','completedAt'])
-        && d.statusUpdatedAt == request.time && d.statusRevision is int
-        && ((before.status == 'Pending' && before.get('statusRevision', 0) == 0
-            && d.status == 'Preparing' && d.statusRevision == 1
-            && d.preparingAt == request.time && !('readyAt' in d) && !('completedAt' in d)
-            && queueClaim(before.vendorUid, id, before.ticket))
-          || (before.status == 'Preparing' && before.statusRevision == 1
-            && d.status == 'Ready' && d.statusRevision == 2
-            && d.preparingAt == before.preparingAt && d.readyAt == request.time && !('completedAt' in d)
-            && queueRelease(before.vendorUid, id))
-          || (before.status == 'Ready' && before.statusRevision == 2
-            && d.status == 'Completed' && d.statusRevision == 3
-            && d.preparingAt == before.preparingAt && d.readyAt == before.readyAt
-            && d.completedAt == request.time));
+      let changed = d.diff(before).affectedKeys();
+      return before.status == 'Pending'
+        ? (changed.hasOnly(['status','statusRevision','statusUpdatedAt','preparingAt','preparationEstimateMillis'])
+          && before.get('statusRevision', 0) == 0
+          && !('preparationEstimateMillis' in before) && !('preparationSampleRecorded' in before)
+          && d.status == 'Preparing' && d.statusRevision == 1
+          && d.statusUpdatedAt == request.time && d.preparingAt == request.time
+          && !('readyAt' in d) && !('completedAt' in d) && !('preparationSampleRecorded' in d)
+          && validPreparationEstimate(d, before) && queueClaim(before.vendorUid, id, before.ticket))
+        : before.status == 'Preparing'
+          ? (changed.hasOnly(['status','statusRevision','statusUpdatedAt','readyAt','preparationSampleRecorded'])
+            && before.statusRevision == 1 && d.status == 'Ready' && d.statusRevision == 2
+            && d.statusUpdatedAt == request.time && d.preparingAt == before.preparingAt
+            && d.readyAt == request.time && !('completedAt' in d)
+            && d.get('preparationEstimateMillis', null) == before.get('preparationEstimateMillis', null)
+            && d.preparationSampleRecorded == false && queueRelease(before.vendorUid, id, before.ticket))
+          : before.status == 'Ready'
+            ? ((changed.hasOnly(['status','statusRevision','statusUpdatedAt','completedAt'])
+                && before.statusRevision == 2 && d.status == 'Completed' && d.statusRevision == 3
+                && d.statusUpdatedAt == request.time && d.preparingAt == before.preparingAt
+                && d.readyAt == before.readyAt && d.completedAt == request.time)
+              || validPreparationSampleMarker(d, before, before.vendorUid))
+            : before.status == 'Completed' && validPreparationSampleMarker(d, before, before.vendorUid);
     }
     function progressPath(uid) { return /databases/$(database)/documents/queueProgress/$(uid); }
     // Public aggregate only: no order ID, Student identity or private stall data.
     function progressShape(d, uid) {
-      return d.keys().hasAll(['schemaVersion','vendorUid','nextTicket','preparing','revision','updatedAt'])
-        && d.keys().hasOnly(['schemaVersion','vendorUid','nextTicket','preparing','revision','updatedAt'])
-        && d.schemaVersion == 1 && d.vendorUid == uid && d.nextTicket is int
+      return d.keys().hasAll(['schemaVersion','vendorUid','nextTicket','preparingCount','revision','updatedAt'])
+        && d.keys().hasOnly(['schemaVersion','vendorUid','nextTicket','preparingCount','revision','updatedAt'])
+        && d.schemaVersion == 2 && d.vendorUid == uid && d.nextTicket is int
         && d.nextTicket >= 1 && d.nextTicket <= 2147483648
-        && d.preparing is bool && d.revision is int && d.updatedAt is timestamp
-        && d.revision == 2 * (d.nextTicket - 1) - (d.preparing ? 1 : 0)
+        && d.preparingCount is int && d.preparingCount >= 0 && d.preparingCount <= d.nextTicket - 1
+        && d.revision is int && d.updatedAt is timestamp
+        && d.revision == 2 * (d.nextTicket - 1) - d.preparingCount
         && d.revision >= 0;
     }
-    function progressMatches(d, q, uid) {
-      return progressShape(d, uid) && d.nextTicket == q.nextTicket
-        && d.preparing == (q.preparingOrderId != null)
+    function legacyProgressMatches(d, q, uid) {
+      return d.keys().hasAll(['schemaVersion','vendorUid','nextTicket','preparing','revision','updatedAt'])
+        && d.keys().hasOnly(['schemaVersion','vendorUid','nextTicket','preparing','revision','updatedAt'])
+        && d.schemaVersion == 1 && q.schemaVersion == 1 && d.vendorUid == uid
+        && d.nextTicket == q.nextTicket && d.preparing == (q.preparingOrderId != null)
         && d.revision == q.revision && d.updatedAt == q.updatedAt;
+    }
+    function progressMatches(d, q, uid) {
+      return q.schemaVersion == 1 ? legacyProgressMatches(d, q, uid)
+        : progressShape(d, uid) && d.nextTicket == q.nextTicket
+          && d.preparingCount == q.preparingCount && d.revision == q.revision && d.updatedAt == q.updatedAt;
     }
     function validProgressCreate(d, uid) {
       // A one-time owner bootstrap may mirror an existing legacy cursor without
       // moving it. Missing progress never means zero to a Student client.
       return existsAfter(queuePath(uid))
         ? progressMatches(d, getAfter(queuePath(uid)).data, uid)
-        : (progressShape(d, uid) && d.nextTicket == 1 && d.preparing == false
+        : (progressShape(d, uid) && d.nextTicket == 1 && d.preparingCount == 0
           && d.revision == 0 && d.updatedAt == request.time);
     }
     function validProgressUpdate(d, uid) {
@@ -404,6 +540,14 @@ service cloud.firestore {
       allow list, delete: if false;
       allow create, update: if configuredVendor(vendorUid) && validQueueWrite(request.resource.data, vendorUid)
         && progressMatches(getAfter(progressPath(vendorUid)).data, request.resource.data, vendorUid);
+    }
+    match /vendorPreparationStats/{vendorUid} {
+      allow get: if configuredVendor(vendorUid);
+      allow list, delete: if false;
+      allow create: if configuredVendor(vendorUid)
+        && validPreparationStatsCreate(request.resource.data, vendorUid);
+      allow update: if configuredVendor(vendorUid)
+        && validPreparationStatsUpdate(request.resource.data, vendorUid);
     }
     match /orders/{orderId} {
       allow read: if orderReader(resource.data);

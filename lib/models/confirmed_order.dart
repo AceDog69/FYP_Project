@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../constants/checkout_limits.dart';
 import '../constants/predefined_pictures.dart';
+import 'preparation_stats.dart';
 
 const simulatedPaymentMethods = {'ewallet': 'E-Wallet', 'onlineBanking': 'Online Banking', 'card': 'Credit / Debit Card'};
 
@@ -81,13 +82,16 @@ class ConfirmedOrder {
     required this.stallName, required this.ticket, required this.totalSen, required this.itemCount,
     required this.preparationMinutes, required this.paymentMethod, required this.createdAt,
     required this.firstItem, this.status = 'Pending', this.statusRevision = 0,
-    this.statusUpdatedAt, this.preparingAt, this.readyAt, this.completedAt}) {
+    this.statusUpdatedAt, this.preparingAt, this.readyAt, this.completedAt,
+    this.preparationEstimateMillis, this.preparationSampleRecorded = false}) {
     if (itemCount < 1 || itemCount > maxCheckoutProducts) {
       throw const FormatException('Invalid confirmed order size.');
     }
   }
   final String id, studentUid, vendorUid, stallName, paymentMethod, status;
   final int ticket, totalSen, itemCount, preparationMinutes, statusRevision;
+  final int? preparationEstimateMillis;
+  final bool preparationSampleRecorded;
   final Timestamp? statusUpdatedAt, preparingAt, readyAt, completedAt;
   String? get nextStatus => status == 'Completed' ? null : orderStatuses[orderStatuses.indexOf(status) + 1];
   final Timestamp createdAt;
@@ -104,8 +108,13 @@ class ConfirmedOrder {
           throw const FormatException('Invalid confirmed order.');
         }
     final revision = orderStatuses.indexOf(d['status'] as String);
+    final estimate = d['preparationEstimateMillis'];
     if ((d.containsKey('statusRevision') && d['statusRevision'] is! int) ||
         (d['statusRevision'] ?? 0) != revision ||
+        (estimate != null && (estimate is! int || estimate < minimumPreparationSampleMillis ||
+          estimate > maximumPreparationSampleMillis)) || (revision == 0 && estimate != null) ||
+        (d.containsKey('preparationSampleRecorded') && d['preparationSampleRecorded'] is! bool) ||
+        (revision < 2 && d.containsKey('preparationSampleRecorded')) ||
         (revision > 0 && (d['statusUpdatedAt'] is! Timestamp || d['preparingAt'] is! Timestamp)) ||
         (revision > 1 && d['readyAt'] is! Timestamp) || (revision > 2 && d['completedAt'] is! Timestamp)) {
       throw const FormatException('Invalid order progress.');
@@ -115,6 +124,8 @@ class ConfirmedOrder {
       paymentMethod: d['paymentMethod'], createdAt: d['createdAt'],
       status: d['status'], statusRevision: revision, statusUpdatedAt: d['statusUpdatedAt'],
       preparingAt: d['preparingAt'], readyAt: d['readyAt'], completedAt: d['completedAt'],
+      preparationEstimateMillis: estimate as int?,
+      preparationSampleRecorded: d['preparationSampleRecorded'] == true,
       firstItem: OrderItem.decode(Map<String, dynamic>.from(d['firstItem'] as Map), snapshot: true));
   }
 }

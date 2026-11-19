@@ -99,7 +99,9 @@ class _QueueCardState extends State<_QueueCard> {
     final ahead = verified && estimate.ahead != null ? '${estimate.ahead}' : 'Unavailable';
     final readyText = terminal ? '${widget.cachedOrder ? 'Last known: ' : ''}${order.status == 'Ready' ? 'Ready for pickup' : 'Completed'}'
       : hasEstimate ? 'Approx. ${estimate.minutes} min until Ready'
-      : estimate.overdue ? 'Initial estimate elapsed' : 'Waiting time unavailable';
+      : estimate.overdue ? 'Estimate elapsed'
+      : order.status == 'Pending' && verified && estimate.ahead != null
+          ? 'Waiting for preparation to begin.' : 'Waiting time unavailable';
     return VendorWorkspaceCard(key: ValueKey('queue-${order.id}'), child: Column(
       crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         Text(order.stallName, style: Theme.of(context).textTheme.titleLarge), const SizedBox(height: 12),
@@ -123,7 +125,7 @@ class _QueueCardState extends State<_QueueCard> {
             Text(readyText, key: ValueKey('queue-eta-${order.id}'), style: TextStyle(fontSize: 24,
               fontWeight: FontWeight.w800, color: hasEstimate || terminal ? primaryOrange : const Color(0xFF596273))),
           ])),
-        if (!terminal && !hasEstimate) ...[const SizedBox(height: 12), Text(estimate.message)],
+        if (!terminal && !hasEstimate && estimate.message != readyText) ...[const SizedBox(height: 12), Text(estimate.message)],
         const SizedBox(height: 12),
         ExpansionTile(key: ValueKey('queue-explanation-${order.id}'), tilePadding: EdgeInsets.zero,
           childrenPadding: const EdgeInsets.only(bottom: 12), title: const Text('How this estimate works',
@@ -133,7 +135,9 @@ class _QueueCardState extends State<_QueueCard> {
             if (!terminal && hasEstimate) ...[const SizedBox(height: 8), Text(
               'Estimate checked: ${queueTime(Timestamp.fromDate(checkedAt))}', style: Theme.of(context).textTheme.bodySmall)],
             const SizedBox(height: 8),
-            Text('Initial preparation allowance: ${order.preparationMinutes} min (recorded at confirmation).',
+            Text(order.preparationEstimateMillis == null
+              ? 'Initial preparation allowance: ${order.preparationMinutes} min (recorded at confirmation).'
+              : 'Saved preparation baseline: ${(order.preparationEstimateMillis! + 59999) ~/ 60000} min (approximate).',
               style: Theme.of(context).textTheme.bodySmall),
             const SizedBox(height: 8),
             Text('Order updated: ${queueTime(order.statusUpdatedAt ?? order.createdAt)}', style: Theme.of(context).textTheme.bodySmall),

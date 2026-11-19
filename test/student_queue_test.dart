@@ -29,12 +29,12 @@ void main() {
       expect(() => QueueProgress.decode('alpha', {...good, ...values}), throwsFormatException);
     }
   });
-  test('Pending position is exact but parallel preparation has no defensible numeric ETA', () {
+  test('Pending position is exact and waits without a numerical ETA', () {
     final one = estimateQueue(first, progress('alpha', 1, 0), now);
     final four = estimateQueue(fourth, progress('alpha', 1, 0), now);
     expect(one.ahead, 0); expect(one.minutes, isNull);
     expect(four.ahead, 3); expect(four.minutes, isNull);
-    expect(four.message, contains('unavailable while orders are prepared in parallel'));
+    expect(four.message, 'Waiting for preparation to begin.');
   });
   test('Pending position counts earlier tickets that have not started', () {
     final parallel = estimateQueue(fourth, progress('alpha', 3, 2), now);
@@ -120,7 +120,7 @@ void main() {
     final receipt = receiptFor(queueRequest('1'), 1); var order = receipt.order;
     repo.receipts[order.id] = receipt; repo.publicProgress['alpha'] = progress('alpha', 1, 0);
     final clock = progressed(order).preparingAt!.toDate().add(const Duration(minutes: 5));
-    await mount(tester, repo, clock: clock); await tester.pumpAndSettle(); expect(find.text('Waiting time unavailable'), findsOneWidget);
+    await mount(tester, repo, clock: clock); await tester.pumpAndSettle(); expect(find.text('Waiting for preparation to begin.'), findsOneWidget);
     order = progressed(order); repo.receipts[order.id] = OrderReceipt(order, receipt.items);
     repo.publicProgress['alpha'] = progress('alpha', 2, 1); repo.emit(); await tester.pumpAndSettle();
     expect(find.text('Preparing'), findsOneWidget); expect(find.text('Approx. 10 min until Ready'), findsOneWidget);

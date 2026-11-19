@@ -275,8 +275,16 @@ class FirebaseOrderRepository extends OrderRepository {
     }
   }
   @override
-  Stream<MenuData<ConfirmedOrder>> orders({required bool vendor}) => _watch(
-    db.collection('orders').where(vendor ? 'vendorUid' : 'studentUid', isEqualTo: _uid), ConfirmedOrder.decode);
+  Stream<MenuData<ConfirmedOrder>> orders({required bool vendor}) async* {
+    final source = _watch(db.collection('orders').where(
+      vendor ? 'vendorUid' : 'studentUid', isEqualTo: _uid), ConfirmedOrder.decode);
+    await for (final data in source) {
+      yield data;
+      if (vendor && canProcessOrders && !data.cached) {
+        _processing.recordReadySamples(data.items);
+      }
+    }
+  }
   @override
   Stream<MenuData<CheckoutRequest>> pendingRequests() => _watch(
     db.collection('users').doc(_uid).collection('checkoutRequests').where('state', isEqualTo: 'pending'), CheckoutRequest.decode);

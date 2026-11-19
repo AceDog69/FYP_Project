@@ -143,22 +143,124 @@ service cloud.firestore {
         && validQueue(d, uid) && d.revision == before.revision + 1
         && orderBefore.vendorUid == uid && orderAfter.vendorUid == uid && (starts || readies);
     }
+    function preparationStatsPath(uid) {
+      return /databases/$(database)/documents/vendorPreparationStats/$(uid);
+    }
+    function preparationStatsShape(d, uid) {
+      return d.keys().hasAll(['schemaVersion','vendorUid','sampleCount','totalDurationMillis','revision','lastOrderId','updatedAt'])
+        && d.keys().hasOnly(['schemaVersion','vendorUid','sampleCount','totalDurationMillis','revision','lastOrderId','updatedAt'])
+        && d.schemaVersion == 1 && d.vendorUid == uid
+        && d.sampleCount is int && d.sampleCount >= 1 && d.sampleCount <= 2147483647
+        && d.totalDurationMillis is int
+        && d.totalDurationMillis >= d.sampleCount * 1000
+        && d.totalDurationMillis <= d.sampleCount * 43200000
+        && d.revision is int && d.revision == d.sampleCount
+        && d.lastOrderId is string && d.lastOrderId.matches('^[A-Za-z0-9]{20}$')
+        && d.updatedAt is timestamp;
+    }
+    function validPreparationEstimate(d, before) {
+      let path = preparationStatsPath(before.vendorUid);
+      let estimate = d.get('preparationEstimateMillis', null);
+      return estimate is int
+        && estimate >= 1000 && estimate <= 43200000
+        && (exists(path)
+          ? (preparationStatsShape(get(path).data, before.vendorUid)
+            && estimate * get(path).data.sampleCount >= get(path).data.totalDurationMillis
+            && (estimate - 1) * get(path).data.sampleCount < get(path).data.totalDurationMillis)
+          : estimate == before.preparationMinutes * 60000);
+    }
+    function preparationDuration(before) {
+      let started = before.get('preparingAt', null);
+      let ready = before.get('readyAt', null);
+      return started is timestamp && ready is timestamp
+        ? ready.toMillis() - started.toMillis() : -1;
+    }
+    function validStatsSampleEvent(d, uid) {
+      let id = d.get('lastOrderId', '');
+      let before = get(orderPath(id)).data;
+      let after = getAfter(orderPath(id)).data;
+      return before == null || after == null ? false : validStatsSamplePair(before, after, uid);
+    }
+    function validStatsSamplePair(before, after, uid) {
+      let sampleMillis = preparationDuration(before);
+      return before.get('vendorUid', null) == uid && after.get('vendorUid', null) == uid
+        && before.get('status', null) in ['Ready','Completed'] && after.get('status', null) == before.get('status', null)
+        && before.get('preparationSampleRecorded', false) == false
+        && after.get('preparationSampleRecorded', false) == true
+        && after.diff(before).affectedKeys().hasOnly(['preparationSampleRecorded'])
+        && sampleMillis >= 1000 && sampleMillis <= 43200000;
+    }
+    function validPreparationStatsCreate(d, uid) {
+      let id = d.get('lastOrderId', '');
+      let order = get(orderPath(id)).data;
+      let sampleMillis = order == null ? -1 : preparationDuration(order);
+      return preparationStatsShape(d, uid) && d.updatedAt == request.time
+        && validStatsSampleEvent(d, uid) && d.sampleCount == 1
+        && d.revision == 1 && d.totalDurationMillis == sampleMillis;
+    }
+    function validPreparationStatsUpdate(d, uid) {
+      let id = d.get('lastOrderId', '');
+      let order = get(orderPath(id)).data;
+      let sampleMillis = order == null ? -1 : preparationDuration(order);
+      return preparationStatsShape(resource.data, uid) && preparationStatsShape(d, uid)
+        && validStatsSampleEvent(d, uid) && d.updatedAt == request.time
+        && resource.data.sampleCount < 2147483647
+        && d.sampleCount == resource.data.sampleCount + 1
+        && d.revision == resource.data.revision + 1
+        && d.totalDurationMillis == resource.data.totalDurationMillis + sampleMillis
+        && d.lastOrderId != resource.data.lastOrderId;
+    }
+    function preparationStatsUnchanged(uid) {
+      let path = preparationStatsPath(uid);
+      return exists(path) == existsAfter(path)
+        && (!exists(path) || get(path).data == getAfter(path).data);
+    }
+    function preparationStatsIncludeSample(uid, id, sampleMillis) {
+      let path = preparationStatsPath(uid);
+      let old = exists(path) ? get(path).data : null;
+      let fresh = getAfter(path).data;
+      return existsAfter(path) && preparationStatsShape(fresh, uid)
+        && fresh.updatedAt == request.time && fresh.lastOrderId == id
+        && (exists(path)
+          ? (preparationStatsShape(old, uid) && old.sampleCount < 2147483647
+            && fresh.sampleCount == old.sampleCount + 1 && fresh.revision == old.revision + 1
+            && fresh.totalDurationMillis == old.totalDurationMillis + sampleMillis)
+          : (fresh.sampleCount == 1 && fresh.revision == 1 && fresh.totalDurationMillis == sampleMillis));
+    }
+    function validPreparationSampleMarker(d, before, uid) {
+      let sampleMillis = preparationDuration(before);
+      return d.diff(before).affectedKeys().hasOnly(['preparationSampleRecorded'])
+        && before.get('status', null) in ['Ready','Completed'] && d.get('status', null) == before.get('status', null)
+        && before.get('preparationSampleRecorded', false) == false
+        && d.get('preparationSampleRecorded', false) == true
+        && (sampleMillis >= 1000 && sampleMillis <= 43200000
+          ? preparationStatsIncludeSample(uid, before.orderId, sampleMillis)
+          : preparationStatsUnchanged(uid));
+    }
     function validOrderProgress(d, before, id) {
-      return d.diff(before).affectedKeys().hasOnly([
-          'status','statusRevision','statusUpdatedAt','preparingAt','readyAt','completedAt'])
-        && d.statusUpdatedAt == request.time && d.statusRevision is int
-        && ((before.status == 'Pending' && before.get('statusRevision', 0) == 0
-            && d.status == 'Preparing' && d.statusRevision == 1
-            && d.preparingAt == request.time && !('readyAt' in d) && !('completedAt' in d)
-            && queueClaim(before.vendorUid, id, before.ticket))
-          || (before.status == 'Preparing' && before.statusRevision == 1
-            && d.status == 'Ready' && d.statusRevision == 2
-            && d.preparingAt == before.preparingAt && d.readyAt == request.time && !('completedAt' in d)
-            && queueRelease(before.vendorUid, id, before.ticket))
-          || (before.status == 'Ready' && before.statusRevision == 2
-            && d.status == 'Completed' && d.statusRevision == 3
-            && d.preparingAt == before.preparingAt && d.readyAt == before.readyAt
-            && d.completedAt == request.time));
+      let changed = d.diff(before).affectedKeys();
+      return before.status == 'Pending'
+        ? (changed.hasOnly(['status','statusRevision','statusUpdatedAt','preparingAt','preparationEstimateMillis'])
+          && before.get('statusRevision', 0) == 0
+          && !('preparationEstimateMillis' in before) && !('preparationSampleRecorded' in before)
+          && d.status == 'Preparing' && d.statusRevision == 1
+          && d.statusUpdatedAt == request.time && d.preparingAt == request.time
+          && !('readyAt' in d) && !('completedAt' in d) && !('preparationSampleRecorded' in d)
+          && validPreparationEstimate(d, before) && queueClaim(before.vendorUid, id, before.ticket))
+        : before.status == 'Preparing'
+          ? (changed.hasOnly(['status','statusRevision','statusUpdatedAt','readyAt','preparationSampleRecorded'])
+            && before.statusRevision == 1 && d.status == 'Ready' && d.statusRevision == 2
+            && d.statusUpdatedAt == request.time && d.preparingAt == before.preparingAt
+            && d.readyAt == request.time && !('completedAt' in d)
+            && d.get('preparationEstimateMillis', null) == before.get('preparationEstimateMillis', null)
+            && d.preparationSampleRecorded == false && queueRelease(before.vendorUid, id, before.ticket))
+          : before.status == 'Ready'
+            ? ((changed.hasOnly(['status','statusRevision','statusUpdatedAt','completedAt'])
+                && before.statusRevision == 2 && d.status == 'Completed' && d.statusRevision == 3
+                && d.statusUpdatedAt == request.time && d.preparingAt == before.preparingAt
+                && d.readyAt == before.readyAt && d.completedAt == request.time)
+              || validPreparationSampleMarker(d, before, before.vendorUid))
+            : before.status == 'Completed' && validPreparationSampleMarker(d, before, before.vendorUid);
     }
     function progressPath(uid) { return /databases/$(database)/documents/queueProgress/$(uid); }
     // Public aggregate only: no order ID, Student identity or private stall data.
@@ -438,6 +540,14 @@ service cloud.firestore {
       allow list, delete: if false;
       allow create, update: if configuredVendor(vendorUid) && validQueueWrite(request.resource.data, vendorUid)
         && progressMatches(getAfter(progressPath(vendorUid)).data, request.resource.data, vendorUid);
+    }
+    match /vendorPreparationStats/{vendorUid} {
+      allow get: if configuredVendor(vendorUid);
+      allow list, delete: if false;
+      allow create: if configuredVendor(vendorUid)
+        && validPreparationStatsCreate(request.resource.data, vendorUid);
+      allow update: if configuredVendor(vendorUid)
+        && validPreparationStatsUpdate(request.resource.data, vendorUid);
     }
     match /orders/{orderId} {
       allow read: if orderReader(resource.data);

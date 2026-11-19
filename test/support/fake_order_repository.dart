@@ -142,5 +142,8 @@ ConfirmedOrder progressed(ConfirmedOrder before) {
     statusRevision: before.statusRevision + 1, statusUpdatedAt: time,
     preparingAt: before.preparingAt ?? time,
     readyAt: before.status == 'Preparing' ? time : before.readyAt,
-    completedAt: before.status == 'Ready' ? time : before.completedAt);
+    completedAt: before.status == 'Ready' ? time : before.completedAt,
+    preparationEstimateMillis: before.preparationEstimateMillis ??
+      (before.status == 'Pending' ? before.preparationMinutes * 60000 : null),
+    preparationSampleRecorded: before.status == 'Preparing' ? false : before.preparationSampleRecorded);
 }

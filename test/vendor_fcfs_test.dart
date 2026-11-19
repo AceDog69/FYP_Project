@@ -30,6 +30,8 @@ Map<String, dynamic> header(ConfirmedOrder order) => {
   },
   if (order.readyAt != null) 'readyAt': order.readyAt,
   if (order.completedAt != null) 'completedAt': order.completedAt,
+  if (order.preparationEstimateMillis != null) 'preparationEstimateMillis': order.preparationEstimateMillis,
+  if (order.statusRevision >= 2) 'preparationSampleRecorded': order.preparationSampleRecorded,
 };
 
 void main() {
