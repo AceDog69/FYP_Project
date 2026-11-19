@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:my_fyp_app/main.dart';
 import 'package:my_fyp_app/models/user_profile.dart';
+import 'package:my_fyp_app/models/preparation_stats.dart';
 import 'package:my_fyp_app/models/vendor_stall.dart';
+import 'package:my_fyp_app/models/vendor_menu.dart';
 import 'package:my_fyp_app/services/auth_repository.dart';
 import 'package:my_fyp_app/services/validators.dart';
 import 'package:my_fyp_app/widgets/auth_widgets.dart';
@@ -40,6 +42,8 @@ class TestRepository extends AuthRepository {
   AccountRole? registeredRole;
   final profiles = StreamController<UserProfile?>.broadcast();
   final stallChanges = StreamController<VendorStall>.broadcast();
+  final preparationStatsChanges = StreamController<MenuData<PreparationStats>>.broadcast();
+  MenuData<PreparationStats> currentPreparationStats = const MenuData<PreparationStats>([]);
   VendorStall currentStall = const VendorStall(
     name: 'Campus Kitchen', category: 'Malay', preparationMinutes: 15, isOpen: false,
   );
@@ -83,6 +87,11 @@ class TestRepository extends AuthRepository {
     if (dashboardError != null) throw dashboardError!;
     if (!stallLoading) yield currentStall;
     yield* stallChanges.stream;
+  }
+  @override
+  Stream<MenuData<PreparationStats>> watchPreparationStats() async* {
+    yield currentPreparationStats;
+    yield* preparationStatsChanges.stream;
   }
   @override
   bool get authReady => ready;
@@ -162,6 +171,7 @@ class TestRepository extends AuthRepository {
     catalogRepository.dispose();
     orderRepository.dispose();
     stallChanges.close();
+    preparationStatsChanges.close();
     profiles.close();
     super.dispose();
   }

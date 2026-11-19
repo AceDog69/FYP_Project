@@ -3,7 +3,7 @@ import { randomBytes } from 'node:crypto';
 import { before, beforeEach, afterEach, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { initializeTestEnvironment, assertFails } from '@firebase/rules-unit-testing';
-import { doc, getDocFromServer, getDocs, collection, query, where, setDoc, updateDoc, deleteDoc, writeBatch, serverTimestamp } from 'firebase/firestore';
+import { doc, getDocFromServer, getDocs, collection, query, where, setDoc, updateDoc, deleteDoc, writeBatch, runTransaction, serverTimestamp, Timestamp } from 'firebase/firestore';
 import { account, vendor, draft, prepare, submit, counterRef, orderRef, requestRef } from './checkout_helpers.mjs';
 import { queueRef, progressRef, progressWrites, initialQueue } from './fcfs_helpers.mjs';
 import { countRef, countData, bootstrapCount, countPayload, countWrites, submitCount, advanceCount } from './public_queue_count_helpers.mjs';
@@ -63,6 +63,97 @@ async function rawProgressAndCount(db, order, queue, summary) {
   const batch = writeBatch(db); progressWrites(batch,db,order,queue);
   batch.set(countRef(db,order.vendorUid),summary); return batch.commit();
 }
+
+async function seedVendorWithoutHistory() {
+  const db = existingDb('vendor'), now = Timestamp.now();
+  await env.withSecurityRulesDisabled(async context => {
+    const admin = context.firestore();
+    await setDoc(doc(admin,'users','vendor'),{uid:'vendor',fullName:'Synthetic Vendor',
+      email:'vendor@example.com',phoneNumber:'0123456789',role:'vendor',createdAt:now,
+      stallSetupComplete:true,stallId:'vendor'});
+    await setDoc(doc(admin,'stalls','vendor'),{ownerUid:'vendor',name:'Campus Kitchen',
+      category:'Malay',preparationMinutes:10,status:'closed',createdAt:now});
+    // Model the existing pre-projection listing shape. Updating this stall
+    // must publish the new, validated fields atomically.
+    await setDoc(doc(admin,'publicStalls','vendor'),{vendorUid:'vendor',name:'Campus Kitchen',
+      category:'Malay',preparationMinutes:10,status:'closed',updatedAt:now});
+  });
+  return db;
+}
+
+async function updateStallAndPublicProjection(db, changes) {
+  const sourceRef = doc(db,'stalls','vendor'), userRef = doc(db,'users','vendor');
+  const statsRef = doc(db,'vendorPreparationStats','vendor');
+  const publicRef = doc(db,'publicStalls','vendor');
+  await runTransaction(db, async tx => {
+    const user = await tx.get(userRef), source = await tx.get(sourceRef);
+    const statsSnapshot = await tx.get(statsRef);
+    assert.equal(user.data()?.role,'vendor');
+    assert.equal(user.data()?.stallSetupComplete,true);
+    assert.equal(user.data()?.stallId,'vendor');
+    const next = {...source.data(),...changes};
+    const stats = statsSnapshot.data();
+    const sampleCount = stats?.sampleCount ?? 0;
+    const estimate = stats
+      ? Math.floor((stats.totalDurationMillis + sampleCount - 1) / sampleCount)
+      : next.preparationMinutes * 60000;
+    tx.update(sourceRef,{...changes,updatedAt:serverTimestamp()});
+    tx.set(publicRef,{vendorUid:'vendor',name:next.name,category:next.category,
+      preparationMinutes:next.preparationMinutes,status:next.status,
+      estimatedPreparationMillis:estimate,preparationStatsRevision:stats?.revision ?? 0,
+      updatedAt:serverTimestamp()});
+  });
+}
+
+test('Vendor status/settings preserve the public preparation projection and private history', async () => {
+  const owner = await seedVendorWithoutHistory();
+  const sourceRef = doc(owner,'stalls','vendor'), publicRef = doc(owner,'publicStalls','vendor');
+  const historyRef = doc(owner,'vendorPreparationStats','vendor');
+  assert.equal((await getDocFromServer(historyRef)).exists(),false);
+
+  for (const status of ['open','closed','open']) {
+    await updateStallAndPublicProjection(owner,{status});
+    const source = (await getDocFromServer(sourceRef)).data();
+    const listing = (await getDocFromServer(publicRef)).data();
+    assert.equal(source.status,status);
+    assert.equal(listing.status,status);
+    assert.equal(listing.estimatedPreparationMillis,600000);
+    assert.equal(listing.preparationStatsRevision,0);
+  }
+
+  await updateStallAndPublicProjection(owner,{name:'Updated Kitchen',category:'Japanese',preparationMinutes:20});
+  let listing = (await getDocFromServer(publicRef)).data();
+  assert.equal(listing.name,'Updated Kitchen');
+  assert.equal(listing.category,'Japanese');
+  assert.equal(listing.estimatedPreparationMillis,1200000);
+  assert.equal(listing.preparationStatsRevision,0);
+
+  await env.withSecurityRulesDisabled(async context => {
+    await setDoc(doc(context.firestore(),'vendorPreparationStats','vendor'),{
+      schemaVersion:1,vendorUid:'vendor',sampleCount:2,totalDurationMillis:840000,
+      revision:2,lastOrderId:'abcdefghijklmnopqrst',updatedAt:Timestamp.now(),
+    });
+  });
+  await updateStallAndPublicProjection(owner,{preparationMinutes:30});
+  listing = (await getDocFromServer(publicRef)).data();
+  assert.equal(listing.preparationMinutes,30);
+  assert.equal(listing.estimatedPreparationMillis,420000);
+  assert.equal(listing.preparationStatsRevision,2);
+
+  for (const status of ['closed','open']) {
+    await updateStallAndPublicProjection(owner,{status});
+    listing = (await getDocFromServer(publicRef)).data();
+    assert.equal(listing.status,status);
+    assert.equal(listing.estimatedPreparationMillis,420000);
+    assert.equal(listing.preparationStatsRevision,2);
+  }
+
+  const student = await account(env,'projection-reader','student');
+  const visible = await getDocFromServer(doc(student,'publicStalls','vendor'));
+  assert.equal(visible.data().estimatedPreparationMillis,420000);
+  await deny(getDocFromServer(doc(student,'vendorPreparationStats','vendor')));
+  await deny(getDocFromServer(doc(student,'stalls','vendor')));
+});
 
 test('no-order Student reads missing as unavailable and verified empty queue as zero', async () => {
   const owner = await vendor(env), student = await account(env, 'newStudent');

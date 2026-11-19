@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:my_fyp_app/models/preparation_stats.dart';
 import 'package:my_fyp_app/models/user_profile.dart';
+import 'package:my_fyp_app/models/vendor_menu.dart';
 import 'package:my_fyp_app/models/vendor_stall.dart';
 import 'package:my_fyp_app/screens/vendor_dashboard.dart';
 import 'package:my_fyp_app/services/auth_repository.dart';
@@ -44,10 +47,32 @@ void main() {
     expect(find.text('Malay'), findsOneWidget);
     expect(find.text('Closed'), findsOneWidget);
     expect(find.text('15 minutes'), findsOneWidget);
+    final overview = find.byKey(const ValueKey('preparation-time-overview'));
+    expect(find.descendant(of: overview, matching: find.text('Preparation Time Overview')), findsOneWidget);
+    expect(find.descendant(of: overview, matching: find.text('Initial Preparation Time')), findsOneWidget);
+    expect(find.descendant(of: overview, matching: find.text('Current Estimated Preparation Time')), findsOneWidget);
+    expect(find.descendant(of: overview, matching: find.text('Historical Samples Recorded')), findsOneWidget);
+    expect(find.descendant(of: overview, matching: find.text('15 min')), findsNWidgets(2));
+    expect(find.descendant(of: overview, matching: find.text('0 orders')), findsOneWidget);
+    expect(find.descendant(of: overview, matching: find.textContaining('The estimated preparation time is calculated')), findsNothing);
     final action = find.ancestor(of: find.text('Open Stall'), matching: find.byType(OutlinedButton));
     expect(tester.widget<OutlinedButton>(action).onPressed, isNotNull);
     expect(tester.widget<BottomNavigationBar>(find.byType(BottomNavigationBar)).items
       .map((item) => item.label), ['Dashboard', 'Orders', 'Menu', 'Profile']);
+  });
+
+  testWidgets('Preparation overview follows live verified history and rejects cached history', (tester) async {
+    final repo = await launchVendor(tester);
+    final history = PreparationStats(sampleCount: 2, totalDurationMillis: 360000,
+      revision: 2, lastOrderId: List.filled(20, 'A').join(),
+      updatedAt: Timestamp.fromDate(DateTime.utc(2026, 1, 1)));
+    repo.preparationStatsChanges.add(MenuData([history]));
+    await tester.pumpAndSettle();
+    expect(find.text('3 min'), findsOneWidget);
+    expect(find.text('2 orders'), findsOneWidget);
+    repo.preparationStatsChanges.add(MenuData([history], cached: true));
+    await tester.pumpAndSettle();
+    expect(find.text('Unavailable'), findsNWidgets(2));
   });
 
   testWidgets('live updates and cache metadata are reflected without writing', (tester) async {

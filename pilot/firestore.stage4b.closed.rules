@@ -15,13 +15,50 @@ service cloud.firestore {
     function publicStallPath(uid) {
       return /databases/$(database)/documents/publicStalls/$(uid);
     }
+    function preparationStatsPath(uid) {
+      return /databases/$(database)/documents/vendorPreparationStats/$(uid);
+    }
+    function preparationStatsShape(d, uid) {
+      return d.keys().hasAll(['schemaVersion','vendorUid','sampleCount','totalDurationMillis','revision','lastOrderId','updatedAt'])
+        && d.keys().hasOnly(['schemaVersion','vendorUid','sampleCount','totalDurationMillis','revision','lastOrderId','updatedAt'])
+        && d.schemaVersion == 1 && d.vendorUid == uid
+        && d.sampleCount is int && d.sampleCount >= 1 && d.sampleCount <= 2147483647
+        && d.totalDurationMillis is int
+        && d.totalDurationMillis >= d.sampleCount * 1000
+        && d.totalDurationMillis <= d.sampleCount * 43200000
+        && d.revision is int && d.revision == d.sampleCount
+        && d.lastOrderId is string && d.lastOrderId.matches('^[A-Za-z0-9]{20}$')
+        && d.updatedAt is timestamp;
+    }
+    function validPublicPreparationProjection(d, source, uid) {
+      let path = preparationStatsPath(uid);
+      let estimate = d.get('estimatedPreparationMillis', null);
+      let revision = d.get('preparationStatsRevision', null);
+      let hasHistory = existsAfter(path);
+      let stats = hasHistory ? getAfter(path).data : null;
+      return estimate is int && revision is int && revision >= 0
+        && (hasHistory
+          ? (preparationStatsShape(stats, uid) && revision == stats.revision
+            && estimate * stats.sampleCount >= stats.totalDurationMillis
+            && (estimate - 1) * stats.sampleCount < stats.totalDurationMillis)
+          : (revision == 0 && estimate == source.preparationMinutes * 60000));
+    }
+    function publicProjectionMatchesStats(listing, stats, uid) {
+      let estimate = listing.get('estimatedPreparationMillis', null);
+      return listing.vendorUid == uid && estimate is int
+        && listing.get('preparationStatsRevision', null) == stats.revision
+        && estimate * stats.sampleCount >= stats.totalDurationMillis
+        && (estimate - 1) * stats.sampleCount < stats.totalDurationMillis;
+    }
     function studentMenuReader(uid) {
       return student() && exists(publicStallPath(uid));
     }
     function validPublicStall(d, uid) {
       let source = getAfter(/databases/$(database)/documents/stalls/$(uid)).data;
-      return d.keys().hasAll(['vendorUid','name','category','preparationMinutes','status','updatedAt'])
-        && d.keys().hasOnly(['vendorUid','name','category','preparationMinutes','status','pictureId','updatedAt'])
+      return d.keys().hasAll(['vendorUid','name','category','preparationMinutes','status','updatedAt',
+          'estimatedPreparationMillis','preparationStatsRevision'])
+        && d.keys().hasOnly(['vendorUid','name','category','preparationMinutes','status','pictureId','updatedAt',
+          'estimatedPreparationMillis','preparationStatsRevision'])
         && source.ownerUid == uid && d.vendorUid == uid
         && d.name == source.name && d.name is string && d.name.size() > 0 && d.name.size() <= 100
         && d.name.matches('.*\\S.*')
@@ -33,6 +70,7 @@ service cloud.firestore {
         && (('pictureId' in source && 'pictureId' in d
               && d.pictureId == source.pictureId && validStallPicture(d.pictureId))
           || (!('pictureId' in source) && !('pictureId' in d)))
+        && validPublicPreparationProjection(d, source, uid)
         && d.updatedAt == request.time;
     }
     function validStallPicture(id) {
@@ -143,21 +181,6 @@ service cloud.firestore {
         && validQueue(d, uid) && d.revision == before.revision + 1
         && orderBefore.vendorUid == uid && orderAfter.vendorUid == uid && (starts || readies);
     }
-    function preparationStatsPath(uid) {
-      return /databases/$(database)/documents/vendorPreparationStats/$(uid);
-    }
-    function preparationStatsShape(d, uid) {
-      return d.keys().hasAll(['schemaVersion','vendorUid','sampleCount','totalDurationMillis','revision','lastOrderId','updatedAt'])
-        && d.keys().hasOnly(['schemaVersion','vendorUid','sampleCount','totalDurationMillis','revision','lastOrderId','updatedAt'])
-        && d.schemaVersion == 1 && d.vendorUid == uid
-        && d.sampleCount is int && d.sampleCount >= 1 && d.sampleCount <= 2147483647
-        && d.totalDurationMillis is int
-        && d.totalDurationMillis >= d.sampleCount * 1000
-        && d.totalDurationMillis <= d.sampleCount * 43200000
-        && d.revision is int && d.revision == d.sampleCount
-        && d.lastOrderId is string && d.lastOrderId.matches('^[A-Za-z0-9]{20}$')
-        && d.updatedAt is timestamp;
-    }
     function validPreparationEstimate(d, before) {
       let path = preparationStatsPath(before.vendorUid);
       let estimate = d.get('preparationEstimateMillis', null);
@@ -196,7 +219,9 @@ service cloud.firestore {
       let sampleMillis = order == null ? -1 : preparationDuration(order);
       return preparationStatsShape(d, uid) && d.updatedAt == request.time
         && validStatsSampleEvent(d, uid) && d.sampleCount == 1
-        && d.revision == 1 && d.totalDurationMillis == sampleMillis;
+        && d.revision == 1 && d.totalDurationMillis == sampleMillis
+        && existsAfter(publicStallPath(uid))
+        && publicProjectionMatchesStats(getAfter(publicStallPath(uid)).data, d, uid);
     }
     function validPreparationStatsUpdate(d, uid) {
       let id = d.get('lastOrderId', '');
@@ -208,7 +233,9 @@ service cloud.firestore {
         && d.sampleCount == resource.data.sampleCount + 1
         && d.revision == resource.data.revision + 1
         && d.totalDurationMillis == resource.data.totalDurationMillis + sampleMillis
-        && d.lastOrderId != resource.data.lastOrderId;
+        && d.lastOrderId != resource.data.lastOrderId
+        && existsAfter(publicStallPath(uid))
+        && publicProjectionMatchesStats(getAfter(publicStallPath(uid)).data, d, uid);
     }
     function preparationStatsUnchanged(uid) {
       let path = preparationStatsPath(uid);

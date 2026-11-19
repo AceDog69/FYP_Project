@@ -16,7 +16,8 @@ export async function vendor(env,uid='vendor') {
   setup.update(doc(db,'users',uid),{stallSetupComplete:true,stallId:uid});await setup.commit();
   await updateDoc(doc(db,'stalls',uid),{status:'open',updatedAt:serverTimestamp()});
   await setDoc(doc(db,'publicStalls',uid),{vendorUid:uid,name:`${uid} Kitchen`,category:'Malay',
-    preparationMinutes:15,status:'open',updatedAt:serverTimestamp()});
+    preparationMinutes:15,status:'open',estimatedPreparationMillis:15*60000,
+    preparationStatsRevision:0,updatedAt:serverTimestamp()});
   for(let i=0;i<5;i++) {
     const category=writeBatch(db),categoryId=`cat${i}`,name=`Category${i}`;
     category.set(doc(db,'stalls',uid,'menuCategories',categoryId),{vendorUid:uid,name,nameKey:name.toLowerCase(),revision:1,

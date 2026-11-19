@@ -2,7 +2,9 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/user_profile.dart';
+import '../models/preparation_stats.dart';
 import '../models/vendor_stall.dart';
+import '../models/vendor_menu.dart';
 import 'auth_repository.dart';
 import 'vendor_menu_repository.dart';
 import 'catalog_repository.dart';
@@ -117,6 +119,20 @@ class FirebaseAuthRepository extends AuthRepository {
     }
   }
 
+  @override
+  Stream<MenuData<PreparationStats>> watchPreparationStats() async* {
+    final vendorUid = uid;
+    if (vendorUid == null) throw const AccountException('Please sign in again.');
+    await for (final snapshot in db.collection('vendorPreparationStats').doc(vendorUid)
+        .snapshots(includeMetadataChanges: true)) {
+      if (uid != vendorUid) throw const AccountException('Your session changed. Please sign in again.');
+      if (snapshot.metadata.hasPendingWrites) continue;
+      yield MenuData(snapshot.exists
+          ? [PreparationStats.decode(vendorUid, snapshot.data())]
+          : <PreparationStats>[], cached: snapshot.metadata.isFromCache);
+    }
+  }
+
   Future<void> _updateOwnStall(Map<String, dynamic> changes) async {
     if (_stallWritePending) {
       throw const AccountException('A stall update is already in progress.');
@@ -131,15 +147,19 @@ class FirebaseAuthRepository extends AuthRepository {
       await db.runTransaction((tx) async {
         final user = await tx.get(db.collection('users').doc(vendorUid));
         final stall = await tx.get(stallRef);
+        final listingRef = db.collection('publicStalls').doc(vendorUid);
+        final historySnapshot = await tx.get(db.collection('vendorPreparationStats').doc(vendorUid));
         if (uid != vendorUid || user.data()?['role'] != 'vendor' ||
             user.data()?['stallSetupComplete'] != true ||
             user.data()?['stallId'] != vendorUid || !stall.exists) {
           throw const AccountException('A verified Vendor stall is required.');
         }
         VendorStall.fromMap(vendorUid, stall.data()!);
+        final history = historySnapshot.exists
+            ? _decodePreparationStats(vendorUid, historySnapshot.data()) : null;
         tx.update(stallRef, {...changes, 'updatedAt': FieldValue.serverTimestamp()});
-        tx.set(db.collection('publicStalls').doc(vendorUid), {
-          ...publicStallFields(vendorUid, {...stall.data()!, ...changes}),
+        tx.set(listingRef, {
+          ...publicStallFields(vendorUid, {...stall.data()!, ...changes}, history: history),
           'updatedAt': FieldValue.serverTimestamp(),
         });
       });
@@ -282,6 +302,13 @@ class FirebaseAuthRepository extends AuthRepository {
 
   @override
   Future<void> logout() => auth.signOut();
+  PreparationStats _decodePreparationStats(String vendorUid, Map<String, dynamic>? data) {
+    try {
+      return PreparationStats.decode(vendorUid, data);
+    } on FormatException {
+      throw const AccountException('Preparation history is malformed. Stall settings were not changed.');
+    }
+  }
   @override
   void dispose() {
     _subscription.cancel();

@@ -214,19 +214,32 @@ class VendorOrderProcessing {
           PreparationStats? stats;
           if (PreparationStats.isValidDuration(duration)) {
             final snapshot = await tx.get(statsRef);
+            final publicStallRef = db.collection('publicStalls').doc(uid);
+            final publicStall = await tx.get(publicStallRef);
             try {
               stats = snapshot.exists ? PreparationStats.decode(uid, snapshot.data()) : null;
             } on FormatException {
               throw const AccountException('Preparation history is malformed; no sample was changed.');
             }
+            final initialMinutes = publicStall.data()?['preparationMinutes'];
+            if (!publicStall.exists || initialMinutes is! int ||
+                !PreparationStats.matchesPublicProjection(publicStall.data(),
+                  initialPreparationMinutes: initialMinutes, history: stats)) {
+              throw const AccountException('The public preparation estimate is out of sync. Refresh the Vendor dashboard before retrying.');
+            }
             observedSampleCount = stats?.sampleCount ?? 0;
-          }
-          _guard(uid);
-          if (PreparationStats.isValidDuration(duration)) {
+            final nextSampleCount = (stats?.sampleCount ?? 0) + 1;
+            final nextTotalDuration = (stats?.totalDurationMillis ?? 0) + duration;
             tx.set(statsRef, stats == null
                 ? PreparationStats.firstSample(uid, order.id, duration)
                 : stats.withSample(uid, order.id, duration));
+            tx.update(publicStallRef, {
+              ...PreparationStats.publicProjectionForAggregate(sampleCount: nextSampleCount,
+                totalDurationMillis: nextTotalDuration, revision: nextSampleCount),
+              'updatedAt': FieldValue.serverTimestamp(),
+            });
           }
+          _guard(uid);
           tx.update(orderRef, {'preparationSampleRecorded': true});
         }, maxAttempts: 8);
         break;

@@ -69,9 +69,23 @@ void main() {
     expect(tester.widget<VendorWorkspaceCard>(card), isA<VendorWorkspaceCard>());
     expect(find.descendant(of: card, matching: find.text('Malay')), findsOneWidget);
     expect(find.descendant(of: card, matching: find.text('Open')), findsOneWidget);
-    expect(find.descendant(of: card, matching: find.text('Initial preparation: 15 minutes')), findsOneWidget);
+    expect(find.descendant(of: card, matching: find.text('Estimated preparation: ~15 min')), findsOneWidget);
     final action = find.descendant(of: card, matching: find.widgetWithText(FilledButton, 'View Menu'));
     expect(tester.getSize(action).height, greaterThanOrEqualTo(48)); await press(tester, action); expect(opened, 'alpha');
+  });
+
+  testWidgets('Home shows live verified preparation averages and hides cached projections', (tester) async {
+    final repo = catalog();
+    await mount(tester, StudentHome(repository: repo, onStall: (_) {}));
+    await tester.pumpAndSettle();
+    final card = find.byKey(const ValueKey('stall-alpha'));
+    expect(find.descendant(of: card, matching: find.text('Estimated preparation: ~15 min')), findsOneWidget);
+    repo.stallItems[0] = listing('alpha', name: 'Alpha Kitchen',
+      estimatedPreparationMillis: 180000, preparationStatsRevision: 2);
+    repo.emit(); await tester.pumpAndSettle();
+    expect(find.descendant(of: card, matching: find.text('Estimated preparation: ~3 min')), findsOneWidget);
+    repo.cached = true; repo.emit(); await tester.pumpAndSettle();
+    expect(find.descendant(of: card, matching: find.text('Estimated preparation: unavailable (cached data)')), findsOneWidget);
   });
 
   testWidgets('Home search, clear and horizontal categories preserve closed-stall browsing', (tester) async {

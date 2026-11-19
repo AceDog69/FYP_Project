@@ -21,6 +21,19 @@ class _StudentHomeState extends State<StudentHome> {
   late Stream<MenuData<CatalogStall>>? _stalls;
   final _search = TextEditingController();
   String _category = 'All';
+  String _preparationEstimate(CatalogStall listing, {required bool catalogIsCurrent}) {
+    if (!catalogIsCurrent) {
+      return 'Estimated preparation: unavailable (cached data)';
+    }
+    if (!listing.hasVerifiedPreparationEstimate) {
+      return listing.stall.isCached
+          ? 'Estimated preparation: unavailable (cached data)'
+          : 'Estimated preparation: unavailable until verified data is available';
+    }
+    final minutes = (listing.estimatedPreparationMillis! + 59999) ~/ 60000;
+    return 'Estimated preparation: ~$minutes min';
+  }
+
   @override
   void initState() { super.initState(); _stalls = widget.repository?.stalls(); }
   @override
@@ -66,7 +79,7 @@ class _StudentHomeState extends State<StudentHome> {
                   ])),
                 ]),
                 const SizedBox(height: 14),
-                Text('Initial preparation: ${listing.stall.preparationMinutes} minutes', style: const TextStyle(color: mutedText)),
+                Text(_preparationEstimate(listing, catalogIsCurrent: !s.data!.cached), style: const TextStyle(color: mutedText)),
                 const SizedBox(height: 8),
                 StallQueueCount(vendorUid: listing.id, repository: widget.repository, currentStall: !s.data!.cached),
                 const SizedBox(height: 14),

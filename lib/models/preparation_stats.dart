@@ -35,6 +35,57 @@ class PreparationStats {
       ? initialPreparationMinutes * 60000
       : history.averageDurationMillis;
 
+  /// Public Stalls contains only this sanitized estimate and its revision.
+  /// The Security Rules bind both fields to this private aggregate atomically.
+  static Map<String, int> publicProjectionFields({
+    required int initialPreparationMinutes,
+    PreparationStats? history,
+  }) => history == null
+      ? {
+          'estimatedPreparationMillis': initialPreparationMinutes * 60000,
+          'preparationStatsRevision': 0,
+        }
+      : publicProjectionForAggregate(
+          sampleCount: history.sampleCount,
+          totalDurationMillis: history.totalDurationMillis,
+          revision: history.revision,
+        );
+
+  static Map<String, int> publicProjectionForAggregate({
+    required int sampleCount,
+    required int totalDurationMillis,
+    required int revision,
+  }) {
+    if (sampleCount < 1 ||
+        sampleCount > maximumPreparationSamples ||
+        revision != sampleCount ||
+        totalDurationMillis < sampleCount * minimumPreparationSampleMillis ||
+        totalDurationMillis > sampleCount * maximumPreparationSampleMillis) {
+      throw const FormatException('Preparation projection is invalid.');
+    }
+    return {
+      'estimatedPreparationMillis':
+          (totalDurationMillis + sampleCount - 1) ~/ sampleCount,
+      'preparationStatsRevision': revision,
+    };
+  }
+
+  static bool matchesPublicProjection(
+    Map<String, dynamic>? listing, {
+    required int initialPreparationMinutes,
+    PreparationStats? history,
+  }) {
+    if (listing == null) return false;
+    final expected = publicProjectionFields(
+      initialPreparationMinutes: initialPreparationMinutes,
+      history: history,
+    );
+    return listing['estimatedPreparationMillis'] ==
+            expected['estimatedPreparationMillis'] &&
+        listing['preparationStatsRevision'] ==
+            expected['preparationStatsRevision'];
+  }
+
   factory PreparationStats.decode(
     String vendorUid,
     Map<String, dynamic>? data,

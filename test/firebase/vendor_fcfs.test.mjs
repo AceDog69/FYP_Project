@@ -81,12 +81,16 @@ test('initial allowance falls back, historical average is per stall, and each st
   let preparing=await advance(owner,first);
   assert.equal(preparing.preparationEstimateMillis,preparing.preparationMinutes*60000);
   const ready=await fixtureReadyAfter(owner,preparing,6000);await recordPreparationSample(owner,ready);
+  let projection=(await getDocFromServer(doc(owner,'publicStalls','vendor'))).data();
+  assert.equal(projection.estimatedPreparationMillis,6000);assert.equal(projection.preparationStatsRevision,1);
   const otherOwner=await vendor(env,'other'),otherRequest=await draft(student,'student','other',1);
   await prepare(student,otherRequest);
   const otherFirst=await assertSucceeds(submit(student,'student',otherRequest.submissionId));
   const otherStart=await advance(otherOwner,otherFirst);
   assert.equal(otherStart.preparationEstimateMillis,otherStart.preparationMinutes*60000);
   const otherReady=await fixtureReadyAfter(otherOwner,otherStart,30000);await recordPreparationSample(otherOwner,otherReady);
+  const otherProjection=(await getDocFromServer(doc(otherOwner,'publicStalls','other'))).data();
+  assert.equal(otherProjection.estimatedPreparationMillis,30000);assert.equal(otherProjection.preparationStatsRevision,1);
   const otherNextRequest=await draft(student,'student','other',1);
   await prepare(student,otherNextRequest);
   const otherNext=await assertSucceeds(submit(student,'student',otherNextRequest.submissionId));
@@ -97,6 +101,8 @@ test('initial allowance falls back, historical average is per stall, and each st
   const stats=(await getDocFromServer(preparationStatsRef(owner))).data();
   assert.equal(stats.sampleCount,2);assert.equal(stats.totalDurationMillis,24000);
   assert.equal(Math.ceil(stats.totalDurationMillis/stats.sampleCount),12000);
+  projection=(await getDocFromServer(doc(owner,'publicStalls','vendor'))).data();
+  assert.equal(projection.estimatedPreparationMillis,12000);assert.equal(projection.preparationStatsRevision,2);
   thirdStart=await read(owner,third);assert.equal(thirdStart.preparationEstimateMillis,6000);
 });
 
@@ -108,6 +114,8 @@ test('concurrent Ready samples and duplicate retries increment history exactly o
     recordPreparationSample(owner,firstReady),recordPreparationSample(owner,secondReady)]);
   const stats=(await getDocFromServer(preparationStatsRef(owner))).data();
   assert.equal(stats.sampleCount,2);assert.equal(stats.totalDurationMillis,12000);assert.equal(stats.revision,2);
+  const projection=(await getDocFromServer(doc(owner,'publicStalls','vendor'))).data();
+  assert.equal(projection.estimatedPreparationMillis,6000);assert.equal(projection.preparationStatsRevision,2);
   assert.equal((await read(owner,first)).preparationSampleRecorded,true);
   assert.equal((await read(owner,second)).preparationSampleRecorded,true);
 });
@@ -125,6 +133,9 @@ test('parallel Preparing tickets can transition to Ready concurrently without lo
   assert.equal(cursor.nextTicket,3);assert.equal(cursor.preparingCount,0);
   const stats=(await getDocFromServer(preparationStatsRef(owner))).data();
   assert.equal(stats.sampleCount,2);assert.equal(stats.revision,2);
+  const projection=(await getDocFromServer(doc(owner,'publicStalls','vendor'))).data();
+  assert.equal(projection.estimatedPreparationMillis,Math.ceil(stats.totalDurationMillis/stats.sampleCount));
+  assert.equal(projection.preparationStatsRevision,stats.revision);
   assert.equal((await read(owner,first)).preparationSampleRecorded,true);
   assert.equal((await read(owner,second)).preparationSampleRecorded,true);
 });
@@ -138,6 +149,8 @@ test('implausible preparation durations are finalized once but never enter the h
   assert.equal((await read(owner,first)).preparationSampleRecorded,true);
   assert.equal((await read(owner,second)).preparationSampleRecorded,true);
   assert.equal((await getDocFromServer(preparationStatsRef(owner))).exists(),false);
+  const projection=(await getDocFromServer(doc(owner,'publicStalls','vendor'))).data();
+  assert.equal(projection.estimatedPreparationMillis,15*60000);assert.equal(projection.preparationStatsRevision,0);
 });
 
 test('historical preparation statistics are private and cannot be client-forged',async()=>{
@@ -151,6 +164,7 @@ test('historical preparation statistics are private and cannot be client-forged'
   await deny(getDocFromServer(preparationStatsRef(wrong,'vendor')));
   await deny(getDocs(collection(student,'vendorPreparationStats')));
   await deny(updateDoc(ref,{sampleCount:0,totalDurationMillis:1}));
+  await deny(updateDoc(preparationStatsRef(wrong,'vendor'),{sampleCount:99,totalDurationMillis:500000}));
 });
 
 test('direct owning Vendor batch is allowed only for the exact paired transition',async()=>{

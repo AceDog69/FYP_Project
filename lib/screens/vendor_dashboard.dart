@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import '../models/preparation_stats.dart';
 import '../models/vendor_stall.dart';
+import '../models/vendor_menu.dart';
 import '../services/auth_repository.dart';
 import '../services/error_messages.dart';
 import '../theme/app_theme.dart';
@@ -23,6 +25,7 @@ class VendorDashboard extends StatefulWidget {
 
 class _VendorDashboardState extends State<VendorDashboard> {
   late Stream<VendorStall> _stall;
+  late Stream<MenuData<PreparationStats>> _preparationStats;
   bool _busy = false;
   String? _error;
 
@@ -45,18 +48,78 @@ class _VendorDashboardState extends State<VendorDashboard> {
   @override
   void initState() {
     super.initState();
+    _watchDashboard();
+  }
+
+  void _watchDashboard() {
     _stall = widget.repository.watchVendorStall();
+    _preparationStats = widget.repository.watchPreparationStats();
   }
 
   @override
   void didUpdateWidget(covariant VendorDashboard oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.repository != widget.repository) {
-      _stall = widget.repository.watchVendorStall();
+      _watchDashboard();
     }
   }
 
-  Widget _card(String title, List<Widget> children) => Container(
+  Widget _preparationOverview(VendorStall? stall) => StreamBuilder<MenuData<PreparationStats>>(
+    stream: _preparationStats,
+    builder: (context, snapshot) {
+      final current = snapshot.hasData ? snapshot.data! : null;
+      final initialMinutes = stall?.preparationMinutes;
+      final history = current != null && !snapshot.hasError && !current.cached &&
+          stall != null && !stall.isCached ? current.items.firstOrNull : null;
+      final verified = current != null && !snapshot.hasError && !current.cached &&
+          stall != null && initialMinutes != null && !stall.isCached;
+      final initial = initialMinutes == null ? 'Unavailable'
+          : '$initialMinutes min${stall!.isCached ? ' (cached)' : ''}';
+      final estimateMillis = history?.averageDurationMillis ??
+          (initialMinutes == null ? null : initialMinutes * 60000);
+      final estimate = !verified || estimateMillis == null ? 'Unavailable'
+          : '${(estimateMillis + 59999) ~/ 60000} min';
+      final samples = verified
+          ? '${history?.sampleCount ?? 0} ${history?.sampleCount == 1 ? 'order' : 'orders'}'
+          : 'Unavailable';
+      return _card('Preparation Time Overview', [
+        _preparationMetric('Initial Preparation Time', initial),
+        const SizedBox(height: 10),
+        _preparationMetric('Current Estimated Preparation Time', estimate,
+          highlighted: true),
+        const SizedBox(height: 10),
+        _preparationMetric('Historical Samples Recorded', samples),
+      ], key: const ValueKey('preparation-time-overview'));
+    },
+  );
+
+  Widget _preparationMetric(String label, String value,
+      {bool highlighted = false}) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+    decoration: BoxDecoration(
+      color: highlighted ? lightOrange : const Color(0xFFF8F9FB),
+      borderRadius: BorderRadius.circular(12),
+      border: Border.all(color: highlighted
+          ? const Color(0xFFFFD8B8) : const Color(0xFFE7E9EE)),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: const TextStyle(
+          color: mutedText, fontSize: 13, fontWeight: FontWeight.w500,
+        )),
+        const SizedBox(height: 5),
+        Text(value, style: TextStyle(
+          color: highlighted ? primaryOrange : const Color(0xFF202124),
+          fontSize: highlighted ? 20 : 17,
+          fontWeight: FontWeight.w700,
+        )),
+      ],
+    ),
+  );
+
+  Widget _card(String title, List<Widget> children, {Key? key}) => Container(
+    key: key,
     margin: const EdgeInsets.only(bottom: 20),
     padding: const EdgeInsets.all(18),
     decoration: BoxDecoration(
@@ -191,10 +254,7 @@ class _VendorDashboardState extends State<VendorDashboard> {
                         ),
                       _information(stall),
                     ],
-                    _card('Order Overview', [
-                      const Text('Order information is not available yet.',
-                        style: TextStyle(color: mutedText)),
-                    ]),
+                    _preparationOverview(stall),
                     _card('Quick Actions', [
                       Material(
                         type: MaterialType.transparency,

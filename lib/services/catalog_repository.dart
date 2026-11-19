@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/catalog.dart';
 import '../models/public_queue_count.dart';
+import '../models/preparation_stats.dart';
 import '../models/vendor_menu.dart';
 import 'auth_repository.dart';
 
@@ -22,10 +23,15 @@ String catalogError(Object error) {
 }
 
 /// Only deliberately public fields are selected, never a spread of source data.
-Map<String, dynamic> publicStallFields(String uid, Map<String, dynamic> source) => {
+Map<String, dynamic> publicStallFields(String uid, Map<String, dynamic> source,
+    {PreparationStats? history}) => {
   'vendorUid': uid, 'name': source['name'], 'category': source['category'],
   'preparationMinutes': source['preparationMinutes'], 'status': source['status'],
   if (source.containsKey('pictureId')) 'pictureId': source['pictureId'],
+  ...PreparationStats.publicProjectionFields(
+    initialPreparationMinutes: source['preparationMinutes'] as int,
+    history: history,
+  ),
 };
 
 class FirebaseCatalogRepository extends CatalogRepository {
@@ -113,12 +119,21 @@ class FirebaseCatalogRepository extends CatalogRepository {
       final source = await tx.get(db.collection('stalls').doc(uid));
       final target = db.collection('publicStalls').doc(uid);
       final listing = await tx.get(target);
+      final historySnapshot = await tx.get(db.collection('vendorPreparationStats').doc(uid));
       if (currentUid() != uid || user.data()?['role'] != 'vendor' ||
           user.data()?['stallSetupComplete'] != true || user.data()?['stallId'] != uid ||
           source.data()?['ownerUid'] != uid) {
         throw const AccountException('A configured Vendor stall is required.');
       }
-      final fields = publicStallFields(uid, source.data()!);
+      PreparationStats? history;
+      if (historySnapshot.exists) {
+        try {
+          history = PreparationStats.decode(uid, historySnapshot.data());
+        } on FormatException {
+          throw const AccountException('Preparation history is malformed. Stall listing was not published.');
+        }
+      }
+      final fields = publicStallFields(uid, source.data()!, history: history);
       final previous = listing.data();
       if (previous != null &&
           previous.length == fields.length + 1 &&

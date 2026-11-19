@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
+import '../models/preparation_stats.dart';
 import '../models/user_profile.dart';
 import '../models/vendor_stall.dart';
+import '../models/vendor_menu.dart';
 import 'vendor_menu_repository.dart';
 import 'catalog_repository.dart';
 import 'order_repository.dart';
@@ -14,6 +16,8 @@ abstract class AuthRepository extends ChangeNotifier {
   String? get email;
   Stream<UserProfile?> watchProfile();
   Stream<VendorStall> watchVendorStall();
+  Stream<MenuData<PreparationStats>> watchPreparationStats() =>
+      Stream.value(const MenuData<PreparationStats>([]));
   Future<void> setStallOpen(bool open);
   Future<void> updateStallSettings(StallSettings settings);
   Future<void> login(String email, String password);

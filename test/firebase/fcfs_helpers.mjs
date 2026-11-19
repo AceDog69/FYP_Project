@@ -33,6 +33,7 @@ function validStats(uid,d) {
 }
 export async function recordPreparationSample(db,expected) {
   const ref=orderRef(db,expected.orderId),statsRef=preparationStatsRef(db,expected.vendorUid);
+  const publicRef=doc(db,'publicStalls',expected.vendorUid);
   for(let attempt=0;attempt<5;attempt++) {
     let observedSampleCount;
     try {
@@ -42,19 +43,30 @@ export async function recordPreparationSample(db,expected) {
         if(order.preparationSampleRecorded===true) return;
         const duration=order.readyAt?.toMillis?.()-order.preparingAt?.toMillis?.();
         const valid=Number.isInteger(duration)&&duration>=minSampleMillis&&duration<=maxSampleMillis;
-        let statsSnapshot,stats;
+        let statsSnapshot,stats,publicSnapshot;
         if(valid) {
           statsSnapshot=await tx.get(statsRef);stats=statsSnapshot.data();
+          publicSnapshot=await tx.get(publicRef);
           if(statsSnapshot.exists()&&!validStats(order.vendorUid,stats)) throw new Error('malformed-preparation-stats');
           if(stats?.sampleCount>=maxSamples) throw new Error('preparation-sample-limit');
           observedSampleCount=stats?.sampleCount??0;
+          const listing=publicSnapshot.data(), expectedEstimate=stats
+            ? Math.floor((stats.totalDurationMillis+stats.sampleCount-1)/stats.sampleCount)
+            : (listing?.preparationMinutes??0)*60000;
+          if(!publicSnapshot.exists()||!Number.isInteger(listing?.preparationMinutes)||
+             listing.estimatedPreparationMillis!==expectedEstimate||
+             listing.preparationStatsRevision!==(stats?.revision??0))
+            throw new Error('preparation-projection-mismatch');
         }
         if(valid) {
+          const sampleCount=(stats?.sampleCount??0)+1,totalDurationMillis=(stats?.totalDurationMillis??0)+duration;
           const next=stats?{schemaVersion:1,vendorUid:order.vendorUid,sampleCount:stats.sampleCount+1,
             totalDurationMillis:stats.totalDurationMillis+duration,revision:stats.revision+1,lastOrderId:order.orderId,
             updatedAt:serverTimestamp()}:{schemaVersion:1,vendorUid:order.vendorUid,sampleCount:1,
             totalDurationMillis:duration,revision:1,lastOrderId:order.orderId,updatedAt:serverTimestamp()};
           tx.set(statsRef,next);
+          tx.update(publicRef,{estimatedPreparationMillis:Math.floor((totalDurationMillis+sampleCount-1)/sampleCount),
+            preparationStatsRevision:sampleCount,updatedAt:serverTimestamp()});
         }
         tx.update(ref,{preparationSampleRecorded:true});
       },{maxAttempts:8});

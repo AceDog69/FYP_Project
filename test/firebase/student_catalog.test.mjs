@@ -51,7 +51,8 @@ async function vendor(uid = 'vendor') {
   return db;
 }
 const listing=(uid='vendor',values={})=>({vendorUid:uid,name:'Rice Kitchen',category:'Malay',
-  preparationMinutes:15,status:'open',updatedAt:serverTimestamp(),...values});
+  preparationMinutes:15,status:'open',estimatedPreparationMillis:15*60000,preparationStatsRevision:0,
+  updatedAt:serverTimestamp(),...values});
 async function publish(db,uid='vendor',values={}) {
   await setDoc(doc(db,'publicStalls',uid),listing(uid,values));
 }
@@ -94,7 +95,10 @@ test('private users, raw stalls, memberships and name reservations stay private'
   }
   await assertFails(getDocs(collection(student,'users')));await assertFails(getDocs(collection(student,'stalls')));
   const data=(await getDoc(doc(student,'publicStalls','vendor'))).data();
-  assert.deepEqual(Object.keys(data).sort(),['vendorUid','name','category','preparationMinutes','status','updatedAt'].sort());
+  assert.deepEqual(Object.keys(data).sort(),['vendorUid','name','category','preparationMinutes','status',
+    'estimatedPreparationMillis','preparationStatsRevision','updatedAt'].sort());
+  assert.equal(data.estimatedPreparationMillis,15*60000);
+  assert.equal(data.preparationStatsRevision,0);
 });
 
 test('Students, foreign Vendors, anonymous and unconfigured accounts cannot publish or edit listings',async()=>{
@@ -112,7 +116,8 @@ test('owner publication cannot forge fields, leak source extras or publish a mis
   const owner=await vendor();
   for(const values of [{vendorUid:'other'},{name:'Invented'},{category:'Western'},{preparationMinutes:1},
     {status:'closed'},{pictureId:'sushi'},{email:'synthetic@example.com'},{protectedLegacyField:'leak'},
-    {ownerUid:'vendor'},{updatedAt:new Date(0)}]) {
+    {ownerUid:'vendor'},{estimatedPreparationMillis:1000},{preparationStatsRevision:1},
+    {updatedAt:new Date(0)}]) {
     await assertFails(publish(owner,'vendor',values));
   }
   await assertSucceeds(publish(owner));
