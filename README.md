@@ -14,21 +14,23 @@ Android-first Flutter authentication for **A Real-Time Smart Queue and Order Not
 
 ## Firebase setup to complete manually
 
-The existing `android/app/google-services.json` is preserved. It names project **fyp-app-9d78a** and package **com.example.my_fyp_app**, matching the Android application ID. No production API keys or Firebase options were invented.
+The local `android/app/google-services.json` now names the Android app in **fyp-v2-fd5fb** with package **com.example.my_fyp_app**, matching the Gradle application ID. Keep this user-provided configuration; do not replace it with the former project's file.
 
-1. In Firebase Console for that project, enable **Authentication → Sign-in method → Email/Password**. Enable email enumeration protection if it is not already enabled.
+1. In Firebase Console for **fyp-v2-fd5fb**, enable **Authentication → Sign-in method → Email/Password**. Enable email enumeration protection if it is not already enabled.
 2. Create the default **Cloud Firestore** database if necessary. Use the supplied rules rather than open test-mode rules.
-3. Review `firestore.rules`, then deploy them using an account authorized for your project:
+3. Review the default, checkout-disabled `firestore.rules`, then deploy it explicitly to the V2 project using an account authorized for that project:
 
    ```bash
    firebase login
-   firebase deploy --only firestore:rules --project fyp-app-9d78a
+   firebase deploy --only firestore:rules --project fyp-v2-fd5fb --config firebase.json
    ```
 
-   Alternatively paste the contents into Firestore's Rules editor and publish. Rules allow only each authenticated user to create/read their own profile, keep UID/email/role/creation time immutable, and enforce atomic vendor stall ownership and association. Profile deletion and other collections are denied in Stage 1.
+   Alternatively paste the contents into Firestore's Rules editor and publish. These Rules enforce profile ownership and atomic Vendor stall association while keeping checkout and menu deletion disabled by default.
 4. Review the password-reset email template and sender settings in Authentication. Test receipt in an actual mailbox (including spam). The confirmation message intentionally does not reveal whether the email exists.
 
 Native Android Firebase initialization uses the Google Services Gradle plugin. No `firebase_options.dart` is needed for this Android workflow. Live web/iOS support is not configured; use FlutterFire CLI with your actual project if you later target those platforms. The browser integration tests use **local demo emulators only**, not live web configuration.
+
+The real-ordering V2 pilot, its separately gated Rules candidate, and Android test flags are documented in [`docs/firebase_v2_pilot.md`](docs/firebase_v2_pilot.md). The default Rules above keep checkout and menu deletion disabled.
 
 ## Run on Android
 

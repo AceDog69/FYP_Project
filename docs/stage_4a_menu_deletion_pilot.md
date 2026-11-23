@@ -1,4 +1,7 @@
-# Stage 4A menu deletion pilot
+# Stage 4A menu deletion pilot — historical V1 instructions
+
+> **Historical only. Do not execute these old-project instructions for Firebase V2.** V2 keeps menu deletion
+> disabled; see [`firebase_v2_pilot.md`](firebase_v2_pilot.md) for the current ordering candidate.
 
 Food deletion remains disabled in the default Rules and the existing ordering pilot. The separate `firebase.menu-deletion.pilot.json` selects a candidate differing from `pilot/firestore.ordering.rules` only by opening the paired food/membership deletion gate. Its tests verify that equivalence; it has not been deployed.
 

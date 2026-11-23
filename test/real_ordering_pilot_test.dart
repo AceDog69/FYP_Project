@@ -20,13 +20,19 @@ void main() {
   });
   test('both deliberate build defines and actual runtime identity are required', () {
     for (final enabled in [true, false]) {
-      for (final declared in ['', orderingPilotProject, 'other', 'demo-smart-canteen']) {
-        for (final project in [orderingPilotProject, 'other', 'demo-smart-canteen']) {
+      for (final declared in ['', orderingPilotProject, 'fyp-app-9d78a', 'other', 'demo-smart-canteen']) {
+        for (final project in [orderingPilotProject, 'fyp-app-9d78a', 'other', 'demo-smart-canteen']) {
           expect(allowed(enabled: enabled, declared: declared, project: project),
             enabled && declared == orderingPilotProject && project == orderingPilotProject);
         }
       }
     }
+  });
+  test('the original and local demo projects cannot activate the V2 real pilot', () {
+    expect(allowed(enabled: true, declared: 'fyp-app-9d78a', project: 'fyp-app-9d78a'), false);
+    expect(allowed(enabled: true, declared: orderingPilotProject, project: 'fyp-app-9d78a'), false);
+    expect(allowed(enabled: true, declared: orderingPilotProject, authProject: 'fyp-app-9d78a'), false);
+    expect(allowed(enabled: true, declared: 'demo-smart-canteen', project: 'demo-smart-canteen'), false);
   });
   test('wrong Auth identity, named app, platform or emulator endpoint fails closed', () {
     expect(allowed(enabled: true, declared: orderingPilotProject), true);

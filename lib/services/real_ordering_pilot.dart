@@ -3,7 +3,7 @@ import 'firebase_auth_repository.dart';
 import 'order_repository.dart';
 import 'vendor_menu_repository.dart';
 
-const orderingPilotProject = 'fyp-app-9d78a';
+const orderingPilotProject = 'fyp-v2-fd5fb';
 
 // Defaults fail closed, including a flag accidentally supplied to another project.
 bool realOrderingPilotAllowed({required bool enabled, required String declaredProject,

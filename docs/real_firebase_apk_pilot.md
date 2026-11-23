@@ -1,5 +1,10 @@
 # Controlled real-Firebase ordering pilot and private APK
 
+> **Historical V1 record; superseded for current work.** This file records the previous `fyp-app-9d78a`
+> pilot and contains old commands. Do not execute its project/deployment commands for the V2 migration. The
+> current project, reviewed Stage 4B candidate, deployment config, and Android flags are in
+> [`firebase_v2_pilot.md`](firebase_v2_pilot.md). The previous verification results below do not certify V2.
+
 26 October 2026 (Asia/Singapore). Branch `feature/real-firebase-apk-pilot`.
 Base verified through GitHub: `017fd9fe78a0e6116544c4246cf52eb959280218`.
 The delivery report supplies the exact final candidate SHA.

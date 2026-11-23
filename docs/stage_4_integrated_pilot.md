@@ -1,4 +1,8 @@
-# Stage 4 integrated pilot — review candidate
+# Stage 4 integrated pilot — historical V1 candidate
+
+> **Historical only. Do not execute these instructions for Firebase V2.** This integrated candidate opens
+> menu deletion as well as checkout. The V2 ordering pilot keeps menu deletion disabled and uses
+> [`firebase_v2_pilot.md`](firebase_v2_pilot.md) with `pilot/firestore.stage4b.rules`.
 
 3 November 2026 (Asia/Singapore). Branch: `feature/stage-4-integrated-pilot`.
 Verified GitHub base: `a4c1e2f5825533522a988d0270f9ae46c67bbf81` on
