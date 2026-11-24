@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../constants/checkout_limits.dart';
 import '../models/confirmed_order.dart';
 import '../models/vendor_menu.dart';
 import '../services/catalog_repository.dart';
@@ -65,7 +64,6 @@ class _StudentCartScreenState extends State<StudentCartScreen> {
         ] else ...[
           StallOrderContext(name: cart.stallName, products: cart.lines.length, units: cart.itemCount),
           if (cart.warning != null) CommerceCard(child: Text(cart.warning!, style: const TextStyle(color: mutedText))),
-          const Text(checkoutLimitsLabel, style: TextStyle(color: mutedText, fontSize: 12)),
           TextButton(onPressed: _busy ? null : cart.refresh, child: const Text('Refresh Cart')),
           for (final line in cart.lines) CommerceCard(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
             Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -116,8 +114,6 @@ class _StudentCartScreenState extends State<StudentCartScreen> {
             ],
           ])),
           CommerceSummary(items: items, totalSen: cart.totalSen),
-          const Text('Unpaid selections — no order has been placed. Checkout verifies authoritative menu data and prices again.',
-            style: TextStyle(color: mutedText, fontSize: 12)),
           TextButton(onPressed: _busy || cart.checkoutLocked ? null : _clear, child: const Text('Clear Cart')),
           TextButton(onPressed: widget.onBrowse, child: const Text('Continue Browsing')),
         ],

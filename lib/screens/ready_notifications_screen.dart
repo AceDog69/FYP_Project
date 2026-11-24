@@ -83,9 +83,6 @@ class _ReadyNotificationsScreenState extends State<ReadyNotificationsScreen> {
           onPressed: controller.sessionIsCurrent && controller.repository != null && controller.connection != ReadyConnection.loading
             ? () => controller.refresh() : null,
           child: Text(controller.connection == ReadyConnection.error ? 'Retry Notifications' : 'Refresh Notifications')),
-        const SizedBox(height: 12),
-        const Text('Existing Ready orders appear here without replaying an alert. Viewed status lasts until you sign out or restart this app.',
-          style: TextStyle(color: mutedText)),
       ]);
     })));
 }

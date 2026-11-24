@@ -162,10 +162,6 @@ class _VendorDashboardState extends State<VendorDashboard> {
       ),
     ),
     const SizedBox(height: 16),
-    const Text('Initial Preparation Time'),
-    const SizedBox(height: 6),
-    Text('${stall.preparationMinutes} minutes'),
-    const SizedBox(height: 16),
     OutlinedButton(
       onPressed: _busy || stall.isCached ? null : () => _setOpen(stall),
       child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [

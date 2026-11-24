@@ -117,8 +117,6 @@ class _VendorMenuScreenState extends State<VendorMenuScreen> {
               if (foods.data!.items.isEmpty)
                 const VendorWorkspaceCard(child: Padding(padding: EdgeInsets.symmetric(vertical: 24),
                   child: Text('No food items yet', textAlign: TextAlign.center, style: TextStyle(fontSize: 20)))),
-              if (!_repo!.canDeleteFood) const Padding(padding: EdgeInsets.only(bottom: 12), child: Text(
-                'Food deletion is disabled until matching deletion Rules are explicitly activated.', style: TextStyle(color: mutedText))),
               for (final food in foods.data!.items) VendorWorkspaceCard(key: ValueKey('menu-food-${food.id}'),
                 child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
                   Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -148,10 +146,11 @@ class _VendorMenuScreenState extends State<VendorMenuScreen> {
                       onPressed: safe ? () => _editor(categories, stallName ?? '', food) : null,
                       child: const Wrap(alignment: WrapAlignment.center, crossAxisAlignment: WrapCrossAlignment.center,
                         spacing: 8, children: [Icon(Icons.edit_outlined, size: 18), Text('Edit')])),
-                    OutlinedButton(style: OutlinedButton.styleFrom(minimumSize: const Size(120, 48)),
-                      onPressed: safe && _repo!.canDeleteFood ? () => _delete(food) : null,
-                      child: const Wrap(alignment: WrapAlignment.center, crossAxisAlignment: WrapCrossAlignment.center,
-                        spacing: 8, children: [Icon(Icons.delete_outline, size: 18), Text('Delete Food')])),
+                    if (_repo!.canDeleteFood && safe)
+                      OutlinedButton(style: OutlinedButton.styleFrom(minimumSize: const Size(120, 48)),
+                        onPressed: safe ? () => _delete(food) : null,
+                        child: const Wrap(alignment: WrapAlignment.center, crossAxisAlignment: WrapCrossAlignment.center,
+                          spacing: 8, children: [Icon(Icons.delete_outline, size: 18), Text('Delete Food')])),
                   ]),
                 ])),
             ],

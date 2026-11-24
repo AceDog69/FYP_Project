@@ -29,15 +29,15 @@ void main() {
   testWidgets('review displays exact RM and simulated methods; confirmation stays visibly gated', (tester) async {
     final repo = stage.TestRepository()..session(stage.profile(AccountRole.student)); addTearDown(repo.dispose);
     await openCheckout(tester, repo);
-    expect(find.text('Checkout Review'), findsOneWidget); expect(tester.widget<Text>(find.byKey(const ValueKey('commerce-total'))).data, 'RM 8.50');
-    expect(find.text('Up to two distinct foods per order, 1–20 units each.'), findsOneWidget);
+    expect(find.text('Checkout Review'), findsNothing); expect(tester.widget<Text>(find.byKey(const ValueKey('commerce-total'))).data, 'RM 8.50');
+    expect(find.text('Up to two distinct foods per order, 1–20 units each.'), findsNothing);
     expect(find.textContaining('no money is charged'), findsOneWidget);
     expect(find.byType(PaymentMethodCard), findsNWidgets(3));
     expect(tester.widget<FilledButton>(find.byKey(const ValueKey('checkout-confirm'))).onPressed, isNull);
     expect(repo.orderRepository.submitCalls, 0);
   });
 
-  testWidgets('Pixel 6 Cart displays the two-food limit and keeps forty units eligible for review', (tester) async {
+  testWidgets('Pixel 6 Cart keeps forty units eligible for review without policy copy', (tester) async {
     final repo = stage.TestRepository(); addTearDown(repo.dispose); populate(repo.catalogRepository);
     repo.catalogRepository.foodItems['alpha']!.add(food('drink', price: 905, category: 'drinks'));
     final cart = StudentCart('test-user', repo.catalogRepository); addTearDown(cart.dispose);
@@ -49,7 +49,8 @@ void main() {
     await tester.pumpWidget(MaterialApp(home: Scaffold(body: StudentCartScreen(cart: cart,
       onBrowse: () {}, checkoutAvailable: true, onCheckout: () => reviews++))));
     await tester.pumpAndSettle();
-    expect(find.text('Up to two distinct foods per order, 1–20 units each.'), findsOneWidget);
+    expect(find.text('Up to two distinct foods per order, 1–20 units each.'), findsNothing);
+    expect(find.textContaining('Unpaid selections'), findsNothing);
     await tester.ensureVisible(find.text('Review Checkout'));
     expect(tester.widget<Text>(find.byKey(const ValueKey('commerce-total'))).data, 'RM 351.00');
     expect(tester.widget<FilledButton>(find.widgetWithText(FilledButton,'Review Checkout')).onPressed, isNotNull);

@@ -103,7 +103,7 @@ void main() {
     final confirm = find.widgetWithText(TextButton, 'Delete Food');
     await tester.tap(confirm); await tester.pump();
     expect(menu.deletes, 1); expect(menu.foodItems, hasLength(1));
-    expect(tester.widget<OutlinedButton>(button).onPressed, isNull);
+    expect(button, findsNothing);
     expect(find.text('Food deleted.'), findsNothing);
     menu.pending!.complete(); await tester.pumpAndSettle();
     expect(find.text('Delete failed. Please retry.'), findsOneWidget);
@@ -117,7 +117,7 @@ void main() {
     expect(find.text('Food deleted.'), findsOneWidget);
   });
 
-  testWidgets('cached menu disables Food Delete before confirmation', (tester) async {
+  testWidgets('cached menu hides Food Delete before confirmation', (tester) async {
     final repo = stage.TestRepository()..session(stage.profile(AccountRole.vendor, setup: true));
     addTearDown(repo.dispose);
     final menu = repo.menuRepository..deletesEnabled = true;
@@ -127,8 +127,7 @@ void main() {
     await stage.launch(tester, repo);
     await stage.tap(tester, 'Menu');
     menu.cached = true; menu.emit(); await tester.pumpAndSettle();
-    final button = find.widgetWithText(OutlinedButton, 'Delete Food');
-    expect(tester.widget<OutlinedButton>(button).onPressed, isNull);
+    expect(find.widgetWithText(OutlinedButton, 'Delete Food'), findsNothing);
     expect(menu.deletes, 0);
     expect(find.byType(AlertDialog), findsNothing);
   });
@@ -141,7 +140,7 @@ void main() {
       priceSen:850, categoryId:'rice', pictureId:'nasi_lemak', available:true),1));
     await stage.launch(tester,repo); await stage.tap(tester,'Menu');
     expect(find.text('RM 8.50'),findsOneWidget);
-    expect(tester.widget<OutlinedButton>(find.widgetWithText(OutlinedButton,'Delete Food')).onPressed,isNull);
+    expect(find.widgetWithText(OutlinedButton,'Delete Food'), findsNothing);
     await stage.tap(tester,'Edit'); await stage.fill(tester,'Food Name','Updated Bowl');
     await stage.fill(tester,'Price (RM)','9.05');
     await tester.ensureVisible(find.byType(DropdownButtonFormField<String>));

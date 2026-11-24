@@ -92,6 +92,7 @@ void main() {
     expect(indicator(tester).isLabelVisible, true);
     expect(tester.widget<BottomNavigationBar>(find.byType(BottomNavigationBar)).items.length, 5);
     await center(tester);
+    expect(find.textContaining('Existing Ready orders appear here'), findsNothing);
     expect(find.text('Unread'), findsOneWidget); expect(find.widgetWithText(OrderStatusBadge, 'Ready'), findsOneWidget);
     await press(tester, find.widgetWithText(OutlinedButton, 'View Order Details'));
     expect(tester.widget<OrderDetails>(find.byType(OrderDetails)).order.id, ready.order.id);

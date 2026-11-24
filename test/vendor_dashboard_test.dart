@@ -46,7 +46,8 @@ void main() {
     expect(find.text('Campus Kitchen'), findsNWidgets(2));
     expect(find.text('Malay'), findsOneWidget);
     expect(find.text('Closed'), findsOneWidget);
-    expect(find.text('15 minutes'), findsOneWidget);
+    expect(find.text('15 minutes'), findsNothing);
+    expect(find.text('Initial Preparation Time'), findsOneWidget);
     final overview = find.byKey(const ValueKey('preparation-time-overview'));
     expect(find.descendant(of: overview, matching: find.text('Preparation Time Overview')), findsOneWidget);
     expect(find.descendant(of: overview, matching: find.text('Initial Preparation Time')), findsOneWidget);
@@ -82,7 +83,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Updated Stall'), findsNWidgets(2));
     expect(find.text('Western'), findsOneWidget);
-    expect(find.text('20 minutes'), findsOneWidget);
+    expect(find.text('20 minutes'), findsNothing);
+    expect(find.text('20 min (cached)'), findsOneWidget);
     expect(find.text('Open'), findsOneWidget);
     expect(find.textContaining('may be out of date'), findsOneWidget);
     final action = find.ancestor(of: find.text('Close Stall'), matching: find.byType(OutlinedButton));

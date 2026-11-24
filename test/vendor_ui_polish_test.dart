@@ -74,7 +74,8 @@ void main() {
     final add = find.widgetWithText(FilledButton, 'Add Food'), manage = find.widgetWithText(OutlinedButton, 'Manage Categories');
     expect(tester.getSize(manage).height, greaterThanOrEqualTo(48));
     expect(tester.widget<FilledButton>(add).onPressed, isNotNull);
-    expect(tester.widget<OutlinedButton>(find.widgetWithText(OutlinedButton, 'Delete Food')).onPressed, isNull);
+    expect(find.widgetWithText(OutlinedButton, 'Delete Food'), findsNothing);
+    expect(find.textContaining('Food deletion is disabled'), findsNothing);
     await press(tester, manage);
     expect(find.text('Delete Category'), findsNothing);
     expect(find.textContaining('Category deletion is unavailable'), findsNothing);
@@ -92,7 +93,7 @@ void main() {
     await press(tester, find.widgetWithText(OutlinedButton, 'Edit')); expect(find.byType(VendorFoodEditor), findsOneWidget);
     expect(find.text('Rice Bowl'), findsOneWidget); await tester.pageBack(); await tester.pumpAndSettle();
     expect(repo.menuRepository.foodItems.single.draft.priceSen, 850); expect(repo.menuRepository.deletes, 0);
-    expect(tester.widget<OutlinedButton>(find.widgetWithText(OutlinedButton, 'Delete Food')).onPressed, isNull);
+    expect(find.widgetWithText(OutlinedButton, 'Delete Food'), findsNothing);
   });
 
   testWidgets('Menu header survives loading and errors; cache blocks mutations and Retry restores them', (tester) async {
@@ -120,7 +121,7 @@ void main() {
       child: Scaffold(body: VendorMenuScreen(auth: repo))))); await tester.pumpAndSettle();
     final manage = find.widgetWithText(OutlinedButton, 'Manage Categories'), add = find.widgetWithText(FilledButton, 'Add Food');
     expect(tester.getTopLeft(add).dy, greaterThan(tester.getTopLeft(manage).dy));
-    await reveal(tester, find.text('Delete Food'));
+    expect(find.text('Delete Food'), findsNothing);
     expect(tester.getSize(find.widgetWithText(OutlinedButton, 'Edit')).height, greaterThanOrEqualTo(48));
     expect(tester.takeException(), isNull);
   });
@@ -134,6 +135,7 @@ void main() {
     await press(tester, find.widgetWithText(ChoiceChip, 'History'));
     expect(find.text('Ticket #1'), findsNothing); expect(find.text('Ticket #2'), findsOneWidget);
     expect(find.widgetWithText(OrderStatusBadge, 'Completed'), findsOneWidget);
+    expect(find.textContaining('Start tickets in order'), findsNothing);
     expect(find.text('Start Preparing'), findsNothing); expect(tester.takeException(), isNull);
   });
 

@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../constants/checkout_limits.dart';
 import '../models/confirmed_order.dart';
 import '../models/vendor_menu.dart';
 import '../services/checkout_controller.dart';
@@ -57,8 +56,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           ] : [
             StallOrderContext(name: saved?.stallName ?? cart.stallName, products: items.length,
               units: items.fold(0, (sum, item) => sum + item.quantity)),
-            const Text('Checkout Review', style: TextStyle(color: mutedText, fontSize: 12)),
-            const Text(checkoutLimitsLabel, style: TextStyle(color: mutedText, fontSize: 12)), const SizedBox(height: 12),
+            const SizedBox(height: 12),
             CommerceSummary(items: items, totalSen: total, pictures: true, payment: true),
             CommerceCard(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
               Text('Select Payment Method', style: Theme.of(context).textTheme.titleLarge), const SizedBox(height: 12),
