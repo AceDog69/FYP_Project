@@ -69,9 +69,10 @@ void main() {
     await stage.tap(tester, 'View My Orders'); expect(find.text('My Orders'), findsOneWidget);
     expect(find.textContaining('Rice Bowl'), findsOneWidget); expect(find.textContaining('Pending'), findsOneWidget);
     await stage.tap(tester, 'View Details'); expect(find.text('Order Details'), findsOneWidget);
-    final paymentNote = find.textContaining('simulated, no money charged');
-    await tester.scrollUntilVisible(paymentNote, 200, scrollable: find.byType(Scrollable).first);
-    expect(paymentNote, findsOneWidget);
+    final paymentStatus = find.text('Confirmed (simulated)');
+    await tester.scrollUntilVisible(paymentStatus, 200, scrollable: find.byType(Scrollable).first);
+    expect(paymentStatus, findsOneWidget);
+    expect(find.textContaining('simulated, no money charged'), findsNothing);
     final back = find.byTooltip('Back');
     await tester.scrollUntilVisible(back, -200, scrollable: find.byType(Scrollable).first);
     await tester.ensureVisible(back); await tester.pumpAndSettle();

@@ -178,10 +178,12 @@ void main() {
       await mount(tester, OrderDetails(order: receipt.order, repository: repo, vendor: vendor));
       expect(find.text('Order Overview'), findsOneWidget); expect(find.widgetWithText(OrderStatusBadge, 'Ready'), findsOneWidget);
       expect(find.text('Ticket #1'), findsOneWidget); expect(find.text('2026-10-24'), findsOneWidget); expect(find.text('12:34'), findsOneWidget);
+      expect(find.textContaining('Ready for pickup. Collect this order at the stall.'), findsNothing);
       await reveal(tester, find.text('Payment Summary'));
       expect(find.text('Ordered Items'), findsOneWidget); expect(find.text('2 × Rice Bowl'), findsOneWidget); expect(find.text('1 × Teh Ais'), findsOneWidget);
       expect(find.text('Confirmed total: RM 19.50'), findsOneWidget); expect(find.text('Confirmed (simulated)'), findsOneWidget);
-      expect(find.textContaining('simulated, no money charged'), findsOneWidget);
+      expect(find.textContaining('Item snapshots are fixed at confirmation'), findsNothing);
+      expect(find.textContaining('simulated, no money charged'), findsNothing);
       expect(find.text('Start Preparing'), findsNothing); expect(find.text('Mark as Ready'), findsNothing);
       expect(find.text('Mark Completed'), findsNothing); expect(repo.advanceCalls, 0);
       expect(find.textContaining('ETA are not available yet'), findsNothing); expect(tester.takeException(), isNull);
@@ -192,8 +194,10 @@ void main() {
     final repo = FakeOrderRepository(() => 'student'); addTearDown(repo.dispose);
     var receipt = polishedReceipt('1', 1); repo.receipts[receipt.order.id] = receipt;
     await mount(tester, OrderDetails(order: receipt.order, repository: repo));
+    expect(find.textContaining('Waiting for the stall to begin preparation.'), findsNothing);
     receipt = polishedReceipt('1', 1, status: 'Preparing'); repo.receipts[receipt.order.id] = receipt; repo.emit(); await tester.pumpAndSettle();
     expect(find.widgetWithText(OrderStatusBadge, 'Preparing'), findsOneWidget);
+    expect(find.textContaining('The stall is preparing this order.'), findsNothing);
     repo.cached = true; repo.emit(); await tester.pumpAndSettle(); expect(find.textContaining('Cached order —'), findsOneWidget);
     await reveal(tester, find.text('Ordered Items'));
     repo.errorTarget = 'items'; repo.streamError = StateError('offline'); repo.emit(); await tester.pumpAndSettle();
@@ -222,6 +226,8 @@ void main() {
       data: const MediaQueryData(size: Size(320, 640), textScaler: TextScaler.linear(1.3)),
       child: OrderDetails(order: receipt.order, repository: repo)))); await tester.pumpAndSettle();
     await reveal(tester, find.text('Payment Summary'));
-    expect(find.text('Confirmed total: RM 19.50'), findsOneWidget); expect(tester.takeException(), isNull);
+    expect(find.text('Confirmed total: RM 19.50'), findsOneWidget);
+    expect(find.textContaining('This order has been collected and completed.'), findsNothing);
+    expect(tester.takeException(), isNull);
   });
 }

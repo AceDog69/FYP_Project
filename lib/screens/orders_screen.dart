@@ -307,13 +307,6 @@ class _OrderDetailsState extends State<OrderDetails> {
     crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       Text(title, style: Theme.of(context).textTheme.titleLarge), const SizedBox(height: 14), ...children,
     ]));
-  String _progressText(ConfirmedOrder order) => switch (order.status) {
-    'Pending' => 'Waiting for the stall to begin preparation.',
-    'Preparing' => 'The stall is preparing this order.',
-    'Ready' => 'Ready for pickup. Collect this order at the stall.',
-    'Completed' => 'This order has been collected and completed.',
-    _ => order.status,
-  };
   @override
   Widget build(BuildContext context) => StreamBuilder<MenuData<ConfirmedOrder>>(stream: _orders, builder: (context, s) {
     if (s.hasError) {
@@ -341,7 +334,6 @@ class _OrderDetailsState extends State<OrderDetails> {
         Wrap(alignment: WrapAlignment.spaceBetween, crossAxisAlignment: WrapCrossAlignment.center, spacing: 12, runSpacing: 8,
           children: [Text('Ticket #${order.ticket}', style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w800, color: primaryOrange)),
             OrderStatusBadge(order.status)]),
-        const SizedBox(height: 12), Text(_progressText(order), style: const TextStyle(color: mutedText)),
       ]),
       _section(context, 'Order Information', [
         OrderInformationRow('Order Date', placed.substring(0, 10)), const Divider(height: 1),
@@ -354,15 +346,12 @@ class _OrderDetailsState extends State<OrderDetails> {
       ]),
       _section(context, 'Ordered Items', [
         _OrderItems(order: order, repository: widget.repository, polished: true),
-        const SizedBox(height: 8), const Text('Item snapshots are fixed at confirmation.', style: TextStyle(color: mutedText, fontSize: 12)),
       ]),
       _section(context, 'Payment Summary', [
         OrderInformationRow('Payment Method', simulatedPaymentMethods[order.paymentMethod]!), const Divider(height: 1),
         const OrderInformationRow('Payment Status', 'Confirmed (simulated)'), const Divider(height: 1),
         OrderInformationRow('Subtotal', rm(order.totalSen)), const Divider(height: 24),
         Text('Confirmed total: ${rm(order.totalSen)}', style: const TextStyle(color: primaryOrange, fontSize: 22, fontWeight: FontWeight.w800)),
-        const SizedBox(height: 12), Text('${simulatedPaymentMethods[order.paymentMethod]} — simulated, no money charged.',
-          style: const TextStyle(color: mutedText)),
       ]),
       if (widget.vendor) const Text('Status changes are available in Vendor Orders.', style: TextStyle(color: mutedText)),
     ], stallName: order.stallName);
